@@ -10,6 +10,14 @@
     const Thread = Java.type("java.lang.Thread");
     const HttpUtil = Java.type("cn.hutool.http.HttpUtil");
 
+    const setTimeout = function(func, timeout) {
+        Thread.sleep(timeout);
+        return func();
+    }
+
+    const clearTimeout = function(timer) {
+        //ignore
+    }
 
     const fetch = function(req) {
         // console.log(req)
@@ -14992,6 +15000,7 @@
         async wait(_confirms, _timeout) {
             const confirms = (_confirms == null) ? 1 : _confirms;
             const timeout = (_timeout == null) ? 0 : _timeout;
+            const interval = (arguments[2] == null) ? 0 : arguments[2];
             let startBlock = this.#startBlock;
             let nextScan = -1;
             let stopScanning = (startBlock === -1) ? true : false;
@@ -15111,58 +15120,43 @@
                     return null;
                 }
             }
-            const waiter = new Promise((resolve, reject) => {
-                // List of things to cancel when we have a result (one way or the other)
-                const cancellers = [];
-                const cancel = () => { cancellers.forEach((c) => c()); };
-                // On cancel, stop scanning for replacements
-                cancellers.push(() => { stopScanning = true; });
+            const waiter = new Promise(async (resolve, reject) => {
                 // Set up any timeout requested
-                if (timeout > 0) {
-                    const timer = setTimeout(() => {
-                        cancel();
-                        reject(makeError("wait for transaction timeout", "TIMEOUT"));
-                    }, timeout);
-                    cancellers.push(() => { clearTimeout(timer); });
-                }
-                const txListener = async (receipt) => {
-                    // Done; return it!
-                    if ((await receipt.confirmations()) >= confirms) {
-                        cancel();
-                        try {
-                            resolve(checkReceipt(receipt));
-                        }
-                        catch (error) {
+                const nowTs = Date.now();
+                while(true) {
+                    Thread.sleep(interval);
+
+                    if(timeout > 0 && Date.now() - nowTs > timeout) {
+                        reject(makeError("wait transaction timeout", "TIMEOUT", {operation: "wait"}));
+                        return;
+                    }
+
+                    try {
+                        // Check for a replacement; this throws only if one is found
+                        await checkReplacement();
+                    } catch (error) {
+                        // We were replaced (with enough confirms); re-throw the error
+                        if (isError(error, "TRANSACTION_REPLACED")) {
                             reject(error);
+                            return;
                         }
                     }
-                };
-                cancellers.push(() => { this.provider.off(this.hash, txListener); });
-                this.provider.on(this.hash, txListener);
-                // We support replacement detection; start checking
-                if (startBlock >= 0) {
-                    const replaceListener = async () => {
+
+                    const receipt = await this.provider.getTransactionReceipt(this.hash);
+                    // Done; return it!
+                    if ((await receipt.confirmations()) >= confirms) {
                         try {
-                            // Check for a replacement; this throws only if one is found
-                            await checkReplacement();
+                            resolve(checkReceipt(receipt));
+                        } catch (error) {
+                            reject(error);
                         }
-                        catch (error) {
-                            // We were replaced (with enough confirms); re-throw the error
-                            if (isError(error, "TRANSACTION_REPLACED")) {
-                                cancel();
-                                reject(error);
-                                return;
-                            }
+                        finally {
+                            return;
                         }
-                        // Rescheudle a check on the next block
-                        if (!stopScanning) {
-                            this.provider.once("block", replaceListener);
-                        }
-                    };
-                    cancellers.push(() => { this.provider.off("block", replaceListener); });
-                    this.provider.once("block", replaceListener);
+                    }
                 }
             });
+
             return await waiter;
         }
         /**
@@ -16118,7 +16112,7 @@
          *  Resolve to this Contract once the bytecode has been deployed, or
          *  resolve immediately if already deployed.
          */
-        async waitForDeployment() {
+        async waitForDeployment(interval, timeout) {
             // We have the deployement transaction; just use that (throws if deployement fails)
             const deployTx = this.deploymentTransaction();
             if (deployTx) {
@@ -16133,21 +16127,16 @@
             // Make sure we can subscribe to a provider event
             const provider = getProvider(this.runner);
             assert(provider != null, "contract runner does not support .provider", "UNSUPPORTED_OPERATION", { operation: "waitForDeployment" });
-            return new Promise((resolve, reject) => {
-                const checkCode = async () => {
-                    try {
-                        const code = await this.getDeployedCode();
-                        if (code != null) {
-                            return resolve(this);
-                        }
-                        provider.once("block", checkCode);
-                    }
-                    catch (error) {
-                        reject(error);
-                    }
-                };
-                checkCode();
-            });
+            const nowTs = Date.now();
+            while(Date.now() - nowTs > timeout) {
+                Thread.sleep(interval);
+                const code = await this.getDeployedCode();
+                if (code != null) {
+                    return this;
+                }
+            }
+
+            throw makeError("wait for contract deployment timeout", "TIMEOUT", { operation: "waitForDeployment"});
         }
         /**
          *  Return the transaction used to deploy this contract.
@@ -18254,20 +18243,13 @@
          */
         constructor(_network, options) {
             this.#options = Object.assign({}, defaultOptions$1, options || {});
-            if (_network === "any") {
-                this.#anyNetwork = true;
-                this.#networkPromise = null;
-            }
-            else if (_network) {
-                const network = Network.from(_network);
-                this.#anyNetwork = false;
-                this.#networkPromise = Promise.resolve(network);
-                this.emit("network", network, null);
-            }
-            else {
-                this.#anyNetwork = false;
-                this.#networkPromise = null;
-            }
+
+            const network = Network.from(_network);
+            assert(network, "network argument required", "INVALID_NETWORK", {});
+            this.#anyNetwork = false;
+            this.#networkPromise = Promise.resolve(network);
+            this.emit("network", network, null);
+
             this.#lastBlockNumber = -1;
             this.#performCache = new Map();
             this.#subs = new Map();
@@ -18591,47 +18573,7 @@
             return request;
         }
         async getNetwork() {
-            // No explicit network was set and this is our first time
-            if (this.#networkPromise == null) {
-                // Detect the current network (shared with all calls)
-                const detectNetwork = (async () => {
-                    try {
-                        const network = await this._detectNetwork();
-                        this.emit("network", network, null);
-                        return network;
-                    }
-                    catch (error) {
-                        if (this.#networkPromise === detectNetwork) {
-                            this.#networkPromise = null;
-                        }
-                        throw error;
-                    }
-                })();
-                this.#networkPromise = detectNetwork;
-                return (await detectNetwork).clone();
-            }
-            const networkPromise = this.#networkPromise;
-            const [expected, actual] = await Promise.all([
-                networkPromise,
-                this._detectNetwork() // The actual connected network
-            ]);
-            if (expected.chainId !== actual.chainId) {
-                if (this.#anyNetwork) {
-                    // The "any" network can change, so notify listeners
-                    this.emit("network", actual, expected);
-                    // Update the network if something else hasn't already changed it
-                    if (this.#networkPromise === networkPromise) {
-                        this.#networkPromise = Promise.resolve(actual);
-                    }
-                }
-                else {
-                    // Otherwise, we do not allow changes to the underlying network
-                    assert(false, `network changed: ${expected.chainId} => ${actual.chainId} `, "NETWORK_ERROR", {
-                        event: "changed"
-                    });
-                }
-            }
-            return expected.clone();
+            return await this.#networkPromise;
         }
         async getFeeData() {
             const network = await this.getNetwork();
@@ -18745,7 +18687,7 @@
         }
         async #checkNetwork(promise) {
             const { value } = await resolveProperties({
-                //network: this.getNetwork(),
+                network: this.getNetwork(),
                 value: promise
             });
             return value;
@@ -18833,7 +18775,7 @@
         }
         async getTransactionReceipt(hash) {
             const { network, params } = await resolveProperties({
-                network: this.getNetwork(),
+                // network: this.getNetwork(),
                 params: this.#perform({ method: "getTransactionReceipt", hash })
             });
             if (params == null) {
@@ -18937,42 +18879,19 @@
                 return this.getTransactionReceipt(hash);
             }
 
-            //fixme 使用同步方式
-            // const startTs = Date.now();
-            return new Promise(async (resolve, reject) => {
-                let timer = null;
-                const listener = (async (blockNumber) => {
-                    try {
-                        const receipt = await this.getTransactionReceipt(hash);
-                        if (receipt != null) {
-                            if (blockNumber - receipt.blockNumber + 1 >= confirms) {
-                                resolve(receipt);
-                                //this.off("block", listener);
-                                if (timer) {
-                                    clearTimeout(timer);
-                                    timer = null;
-                                }
-                                return;
-                            }
-                        }
+            let nowTs = Date.now();
+            while(Date.now() - nowTs < timeout) {
+                Thread.sleep(interval);
+                const receipt = await this.getTransactionReceipt(hash);
+                if (receipt != null) {
+                    let blockNumber = await this.getBlockNumber();
+                    if (blockNumber - receipt.blockNumber + 1 >= confirms) {
+                        return receipt;
                     }
-                    catch (error) {
-                        console.log("EEE", error);
-                    }
-                    this.once("block", listener);
-                });
-                if (timeout != null) {
-                    timer = setTimeout(() => {
-                        if (timer == null) {
-                            return;
-                        }
-                        timer = null;
-                        this.off("block", listener);
-                        reject(makeError("timeout", "TIMEOUT", { reason: "timeout" }));
-                    }, timeout);
                 }
-                listener(await this.getBlockNumber());
-            });
+            }
+
+            throw makeError("waitForTransaction timeout", "TIMEOUT", {operation: "waitForTransaction", hash: hash});
         }
         async waitForBlock(blockTag) {
             assert(false, "not implemented yet", "NOT_IMPLEMENTED", {
@@ -18983,14 +18902,6 @@
          *  Clear a timer created using the [[_setTimeout]] method.
          */
         _clearTimeout(timerId) {
-            const timer = this.#timers.get(timerId);
-            if (!timer) {
-                return;
-            }
-            if (timer.timer) {
-                clearTimeout(timer.timer);
-            }
-            this.#timers.delete(timerId);
         }
         /**
          *  Create a timer that will execute %%func%% after at least %%timeout%%
@@ -19004,19 +18915,7 @@
             if (timeout == null) {
                 timeout = 0;
             }
-            const timerId = this.#nextTimer++;
-            const func = () => {
-                this.#timers.delete(timerId);
-                _func();
-            };
-            if (this.paused) {
-                this.#timers.set(timerId, { timer: null, func, time: timeout });
-            }
-            else {
-                const timer = setTimeout(func, timeout);
-                this.#timers.set(timerId, { timer, func, time: getTime$1() });
-            }
-            return timerId;
+            return setTimeout(_func, timeout);
         }
         /**
          *  Perform %%func%% on each subscriber.
@@ -19288,14 +19187,6 @@
             }
             this._forEachSubscriber((s) => s.pause(dropWhilePaused));
             this.#pausedState = !!dropWhilePaused;
-            for (const timer of this.#timers.values()) {
-                // Clear the timer
-                if (timer.timer) {
-                    clearTimeout(timer.timer);
-                }
-                // Remaining time needed for when we become unpaused
-                timer.time = getTime$1() - timer.time;
-            }
         }
         /**
          *  Resume the provider.
@@ -20140,6 +20031,8 @@
             }
         }
         constructor(network, options) {
+            options = options || {};
+            options.staticNetwork = true;
             super(network, options);
             this.#nextId = 1;
             this.#options = Object.assign({}, defaultOptions, options || {});
@@ -20618,20 +20511,6 @@
         async listAccounts() {
             const accounts = await this.send("eth_accounts", []);
             return accounts.map((a) => new JsonRpcSigner(this, a));
-        }
-        destroy() {
-            // Stop processing requests
-            if (this.#drainTimer) {
-                clearTimeout(this.#drainTimer);
-                this.#drainTimer = null;
-            }
-            // Cancel all pending requests
-            for (const { payload, reject } of this.#payloads) {
-                reject(makeError("provider destroyed; cancelled request", "UNSUPPORTED_OPERATION", { operation: payload.method }));
-            }
-            this.#payloads = [];
-            // Parent clean-up
-            super.destroy();
         }
     }
     // @TODO: remove this in v7, it is not exported because this functionality
@@ -23271,104 +23150,6 @@
     }
 
     /**
-     *  A **BrowserProvider** is intended to wrap an injected provider which
-     *  adheres to the [[link-eip-1193]] standard, which most (if not all)
-     *  currently do.
-     */
-    class BrowserProvider extends JsonRpcApiPollingProvider {
-        #request;
-        /**
-         *  Connnect to the %%ethereum%% provider, optionally forcing the
-         *  %%network%%.
-         */
-        constructor(ethereum, network, _options) {
-            // Copy the options
-            const options = Object.assign({}, ((_options != null) ? _options : {}), { batchMaxCount: 1 });
-            assertArgument(ethereum && ethereum.request, "invalid EIP-1193 provider", "ethereum", ethereum);
-            super(network, options);
-            this.#request = async (method, params) => {
-                const payload = { method, params };
-                this.emit("debug", { action: "sendEip1193Request", payload });
-                try {
-                    const result = await ethereum.request(payload);
-                    this.emit("debug", { action: "receiveEip1193Result", result });
-                    return result;
-                }
-                catch (e) {
-                    const error = new Error(e.message);
-                    error.code = e.code;
-                    error.data = e.data;
-                    error.payload = payload;
-                    this.emit("debug", { action: "receiveEip1193Error", error });
-                    throw error;
-                }
-            };
-        }
-        async send(method, params) {
-            await this._start();
-            return await super.send(method, params);
-        }
-        async _send(payload) {
-            assertArgument(!Array.isArray(payload), "EIP-1193 does not support batch request", "payload", payload);
-            try {
-                const result = await this.#request(payload.method, payload.params || []);
-                return [{ id: payload.id, result }];
-            }
-            catch (e) {
-                return [{
-                        id: payload.id,
-                        error: { code: e.code, data: e.data, message: e.message }
-                    }];
-            }
-        }
-        getRpcError(payload, error) {
-            error = JSON.parse(JSON.stringify(error));
-            // EIP-1193 gives us some machine-readable error codes, so rewrite
-            // them into 
-            switch (error.error.code || -1) {
-                case 4001:
-                    error.error.message = `ethers-user-denied: ${error.error.message}`;
-                    break;
-                case 4200:
-                    error.error.message = `ethers-unsupported: ${error.error.message}`;
-                    break;
-            }
-            return super.getRpcError(payload, error);
-        }
-        /**
-         *  Resolves to ``true`` if the provider manages the %%address%%.
-         */
-        async hasSigner(address) {
-            if (address == null) {
-                address = 0;
-            }
-            const accounts = await this.send("eth_accounts", []);
-            if (typeof (address) === "number") {
-                return (accounts.length > address);
-            }
-            address = address.toLowerCase();
-            return accounts.filter((a) => (a.toLowerCase() === address)).length !== 0;
-        }
-        async getSigner(address) {
-            if (address == null) {
-                address = 0;
-            }
-            if (!(await this.hasSigner(address))) {
-                try {
-                    //const resp = 
-                    await this.#request("eth_requestAccounts", []);
-                    //console.log("RESP", resp);
-                }
-                catch (error) {
-                    const payload = error.payload;
-                    throw this.getRpcError(payload, { id: payload.id, error });
-                }
-            }
-            return await super.getSigner(address);
-        }
-    }
-
-    /**
      *  [[link-pocket]] provides a third-party service for connecting to
      *  various blockchains over JSON-RPC.
      *
@@ -25490,7 +25271,7 @@
     //
     // dummy change; to pick-up ws security issue changes
 
-    var ethers = /*#__PURE__*/Object.freeze({
+    return Object.freeze({
         __proto__: null,
         AbiCoder: AbiCoder,
         AbstractProvider: AbstractProvider,
@@ -25500,7 +25281,6 @@
         BaseContract: BaseContract,
         BaseWallet: BaseWallet,
         Block: Block,
-        BrowserProvider: BrowserProvider,
         ChainstackProvider: ChainstackProvider,
         CloudflareProvider: CloudflareProvider,
         ConstructorFragment: ConstructorFragment,
@@ -25682,198 +25462,4 @@
         zeroPadBytes: zeroPadBytes,
         zeroPadValue: zeroPadValue
     });
-
-    var exports = {};
-    exports.AbiCoder = AbiCoder;
-    exports.AbstractProvider = AbstractProvider;
-    exports.AbstractSigner = AbstractSigner;
-    exports.AlchemyProvider = AlchemyProvider;
-    exports.AnkrProvider = AnkrProvider;
-    exports.BaseContract = BaseContract;
-    exports.BaseWallet = BaseWallet;
-    exports.Block = Block;
-    exports.BrowserProvider = BrowserProvider;
-    exports.ChainstackProvider = ChainstackProvider;
-    exports.CloudflareProvider = CloudflareProvider;
-    exports.ConstructorFragment = ConstructorFragment;
-    exports.Contract = Contract;
-    exports.ContractEventPayload = ContractEventPayload;
-    exports.ContractFactory = ContractFactory;
-    exports.ContractTransactionReceipt = ContractTransactionReceipt;
-    exports.ContractTransactionResponse = ContractTransactionResponse;
-    exports.ContractUnknownEventPayload = ContractUnknownEventPayload;
-    exports.EnsPlugin = EnsPlugin;
-    exports.EnsResolver = EnsResolver;
-    exports.ErrorDescription = ErrorDescription;
-    exports.ErrorFragment = ErrorFragment;
-    exports.EtherSymbol = EtherSymbol;
-    exports.EtherscanPlugin = EtherscanPlugin;
-    exports.EtherscanProvider = EtherscanProvider;
-    exports.EventFragment = EventFragment;
-    exports.EventLog = EventLog;
-    exports.EventPayload = EventPayload;
-    exports.FallbackFragment = FallbackFragment;
-    exports.FallbackProvider = FallbackProvider;
-    exports.FeeData = FeeData;
-    exports.FeeDataNetworkPlugin = FeeDataNetworkPlugin;
-    exports.FetchCancelSignal = FetchCancelSignal;
-    exports.FetchRequest = FetchRequest;
-    exports.FetchResponse = FetchResponse;
-    exports.FetchUrlFeeDataNetworkPlugin = FetchUrlFeeDataNetworkPlugin;
-    exports.FixedNumber = FixedNumber;
-    exports.Fragment = Fragment;
-    exports.FunctionFragment = FunctionFragment;
-    exports.GasCostPlugin = GasCostPlugin;
-    exports.HDNodeVoidWallet = HDNodeVoidWallet;
-    exports.HDNodeWallet = HDNodeWallet;
-    exports.Indexed = Indexed;
-    exports.InfuraProvider = InfuraProvider;
-    exports.InfuraWebSocketProvider = InfuraWebSocketProvider;
-    exports.Interface = Interface;
-    exports.IpcSocketProvider = IpcSocketProvider;
-    exports.JsonRpcApiProvider = JsonRpcApiProvider;
-    exports.JsonRpcProvider = JsonRpcProvider;
-    exports.JsonRpcSigner = JsonRpcSigner;
-    exports.LangEn = LangEn;
-    exports.Log = Log;
-    exports.LogDescription = LogDescription;
-    exports.MaxInt256 = MaxInt256;
-    exports.MaxUint256 = MaxUint256;
-    exports.MessagePrefix = MessagePrefix;
-    exports.MinInt256 = MinInt256;
-    exports.Mnemonic = Mnemonic;
-    exports.MulticoinProviderPlugin = MulticoinProviderPlugin;
-    exports.N = N$1;
-    exports.NamedFragment = NamedFragment;
-    exports.Network = Network;
-    exports.NetworkPlugin = NetworkPlugin;
-    exports.NonceManager = NonceManager;
-    exports.ParamType = ParamType;
-    exports.PocketProvider = PocketProvider;
-    exports.QuickNodeProvider = QuickNodeProvider;
-    exports.Result = Result;
-    exports.Signature = Signature;
-    exports.SigningKey = SigningKey;
-    exports.SocketBlockSubscriber = SocketBlockSubscriber;
-    exports.SocketEventSubscriber = SocketEventSubscriber;
-    exports.SocketPendingSubscriber = SocketPendingSubscriber;
-    exports.SocketProvider = SocketProvider;
-    exports.SocketSubscriber = SocketSubscriber;
-    exports.StructFragment = StructFragment;
-    exports.Transaction = Transaction;
-    exports.TransactionDescription = TransactionDescription;
-    exports.TransactionReceipt = TransactionReceipt;
-    exports.TransactionResponse = TransactionResponse;
-    exports.Typed = Typed;
-    exports.TypedDataEncoder = TypedDataEncoder;
-    exports.UndecodedEventLog = UndecodedEventLog;
-    exports.UnmanagedSubscriber = UnmanagedSubscriber;
-    exports.Utf8ErrorFuncs = Utf8ErrorFuncs;
-    exports.VoidSigner = VoidSigner;
-    exports.Wallet = Wallet;
-    exports.WebSocketProvider = WebSocketProvider;
-    exports.WeiPerEther = WeiPerEther;
-    exports.Wordlist = Wordlist;
-    exports.WordlistOwl = WordlistOwl;
-    exports.WordlistOwlA = WordlistOwlA;
-    exports.ZeroAddress = ZeroAddress;
-    exports.ZeroHash = ZeroHash;
-    exports.accessListify = accessListify;
-    exports.assert = assert;
-    exports.assertArgument = assertArgument;
-    exports.assertArgumentCount = assertArgumentCount;
-    exports.assertNormalize = assertNormalize;
-    exports.assertPrivate = assertPrivate;
-    exports.checkResultErrors = checkResultErrors;
-    exports.computeAddress = computeAddress;
-    exports.computeHmac = computeHmac;
-    exports.concat = concat;
-    exports.copyRequest = copyRequest;
-    exports.dataLength = dataLength;
-    exports.dataSlice = dataSlice;
-    exports.decodeBase58 = decodeBase58;
-    exports.decodeBase64 = decodeBase64;
-    exports.decodeBytes32String = decodeBytes32String;
-    exports.decodeRlp = decodeRlp;
-    exports.decryptCrowdsaleJson = decryptCrowdsaleJson;
-    exports.decryptKeystoreJson = decryptKeystoreJson;
-    exports.decryptKeystoreJsonSync = decryptKeystoreJsonSync;
-    exports.defaultPath = defaultPath;
-    exports.defineProperties = defineProperties;
-    exports.dnsEncode = dnsEncode;
-    exports.encodeBase58 = encodeBase58;
-    exports.encodeBase64 = encodeBase64;
-    exports.encodeBytes32String = encodeBytes32String;
-    exports.encodeRlp = encodeRlp;
-    exports.encryptKeystoreJson = encryptKeystoreJson;
-    exports.encryptKeystoreJsonSync = encryptKeystoreJsonSync;
-    exports.ensNormalize = ensNormalize;
-    exports.ethers = ethers;
-    exports.formatEther = formatEther;
-    exports.formatUnits = formatUnits;
-    exports.fromTwos = fromTwos;
-    exports.getAccountPath = getAccountPath;
-    exports.getAddress = getAddress;
-    exports.getBigInt = getBigInt;
-    exports.getBytes = getBytes;
-    exports.getBytesCopy = getBytesCopy;
-    exports.getCreate2Address = getCreate2Address;
-    exports.getCreateAddress = getCreateAddress;
-    exports.getDefaultProvider = getDefaultProvider;
-    exports.getIcapAddress = getIcapAddress;
-    exports.getIndexedAccountPath = getIndexedAccountPath;
-    exports.getNumber = getNumber;
-    exports.getUint = getUint;
-    exports.hashMessage = hashMessage;
-    exports.hexlify = hexlify;
-    exports.id = id;
-    exports.isAddress = isAddress;
-    exports.isAddressable = isAddressable;
-    exports.isBytesLike = isBytesLike;
-    exports.isCallException = isCallException;
-    exports.isCrowdsaleJson = isCrowdsaleJson;
-    exports.isError = isError;
-    exports.isHexString = isHexString;
-    exports.isKeystoreJson = isKeystoreJson;
-    exports.isValidName = isValidName;
-    exports.keccak256 = keccak256;
-    exports.lock = lock;
-    exports.makeError = makeError;
-    exports.mask = mask;
-    exports.namehash = namehash;
-    exports.parseEther = parseEther;
-    exports.parseUnits = parseUnits$1;
-    exports.pbkdf2 = pbkdf2;
-    exports.randomBytes = randomBytes;
-    exports.recoverAddress = recoverAddress;
-    exports.resolveAddress = resolveAddress;
-    exports.resolveProperties = resolveProperties;
-    exports.ripemd160 = ripemd160;
-    exports.scrypt = scrypt;
-    exports.scryptSync = scryptSync;
-    exports.sha256 = sha256;
-    exports.sha512 = sha512;
-    exports.showThrottleMessage = showThrottleMessage;
-    exports.solidityPacked = solidityPacked;
-    exports.solidityPackedKeccak256 = solidityPackedKeccak256;
-    exports.solidityPackedSha256 = solidityPackedSha256;
-    exports.stripZerosLeft = stripZerosLeft;
-    exports.toBeArray = toBeArray;
-    exports.toBeHex = toBeHex;
-    exports.toBigInt = toBigInt;
-    exports.toNumber = toNumber;
-    exports.toQuantity = toQuantity;
-    exports.toTwos = toTwos;
-    exports.toUtf8Bytes = toUtf8Bytes;
-    exports.toUtf8CodePoints = toUtf8CodePoints;
-    exports.toUtf8String = toUtf8String;
-    exports.uuidV4 = uuidV4;
-    exports.verifyMessage = verifyMessage;
-    exports.verifyTypedData = verifyTypedData;
-    exports.version = version;
-    exports.wordlists = wordlists;
-    exports.zeroPadBytes = zeroPadBytes;
-    exports.zeroPadValue = zeroPadValue;
-
-    return exports;
 })(this);
