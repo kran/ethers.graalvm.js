@@ -10,15 +10,9 @@
     const Thread = Java.type("java.lang.Thread");
     const HttpUtil = Java.type("cn.hutool.http.HttpUtil");
 
-    const setTimeout = function(func, timeout) {
-        Thread.sleep(timeout);
-        return func();
+    const wait = function(delay) {
+        Thread.sleep(delay);
     }
-
-    const clearTimeout = function(timer) {
-        //ignore
-    }
-
     const fetch = function(req) {
         // console.log(req)
         var newReq;
@@ -1053,7 +1047,6 @@
             catch (_error) {
                 throw _error;
             }
-            // clearTimeout(timer);
             const headers = {};
             resp.headers().forEach((key, value) => {
                 if(key === null) return;
@@ -1910,9 +1903,6 @@
         return toUtf8Bytes(value.replace(/%([0-9a-f][0-9a-f])/gi, (all, code) => {
             return String.fromCharCode(parseInt(code, 16));
         }));
-    }
-    function wait(delay) {
-        Thread.sleep(delay);
     }
 
     /**
@@ -15101,35 +15091,30 @@
                     return null;
                 }
             }
-            const waiter = ((resolve, reject) => {
-                // Set up any timeout requested
-                const nowTs = Date.now();
-                while(true) {
-                    Thread.sleep(interval);
-
-                    if(timeout > 0 && Date.now() - nowTs > timeout) {
-                        throw (makeError("wait transaction timeout", "TIMEOUT", {operation: "wait"}));
-                    }
-
-                    try {
-                        // Check for a replacement; this throws only if one is found
-                        checkReplacement();
-                    } catch (error) {
-                        // We were replaced (with enough confirms); re-throw the error
-                        if (isError(error, "TRANSACTION_REPLACED")) {
-                            throw error;
-                        }
-                    }
-
-                    const receipt = this.provider.getTransactionReceipt(this.hash);
-                    // Done; return it!
-                    if ((receipt.confirmations()) >= confirms) {
-                        return (checkReceipt(receipt));
+            // Set up any timeout requested
+            const nowTs = Date.now();
+            while(true) {
+                try {
+                    checkReplacement();
+                } catch (error) {
+                    // We were replaced (with enough confirms); re-throw the error
+                    if (isError(error, "TRANSACTION_REPLACED")) {
+                        throw error;
                     }
                 }
-            })();
 
-            return waiter;
+                const receipt = this.provider.getTransactionReceipt(this.hash);
+                // Done; return it!
+                if ((receipt.confirmations()) >= confirms) {
+                    return (checkReceipt(receipt));
+                }
+
+                if(timeout > 0 && Date.now() - nowTs > timeout) {
+                    throw (makeError("wait transaction timeout", "TIMEOUT", {operation: "wait"}));
+                }
+
+                wait(interval);
+            }
         }
         /**
          *  Returns ``true`` if this transaction has been included.
@@ -15998,7 +15983,7 @@
             assert(provider != null, "contract runner does not support .provider", "UNSUPPORTED_OPERATION", { operation: "waitForDeployment" });
             const nowTs = Date.now();
             while(Date.now() - nowTs > timeout) {
-                Thread.sleep(interval);
+                wait(interval);
                 const code = this.getDeployedCode();
                 if (code != null) {
                     return this;
@@ -17585,18 +17570,13 @@
      *  behaviour on an eventually-consistent network.
      */
     class AbstractProvider {
-        #subs;
         #plugins;
         // null=unpaused, true=paused+dropWhilePaused, false=paused
-        #pausedState;
-        #destroyed;
         #network;
         #anyNetwork;
         #performCache;
         // The most recent block number if running an event or -1 if no "block" event
         #lastBlockNumber;
-        #nextTimer;
-        #timers;
         #disableCcipRead;
         #options;
         /**
@@ -17609,12 +17589,7 @@
 
             this.#lastBlockNumber = -1;
             this.#performCache = new Map();
-            this.#subs = new Map();
             this.#plugins = new Map();
-            this.#pausedState = null;
-            this.#destroyed = false;
-            this.#nextTimer = 1;
-            this.#timers = new Map();
             this.#disableCcipRead = false;
 
             const network = Network.from(_network);
@@ -18220,7 +18195,6 @@
 
             let nowTs = Date.now();
             while(Date.now() - nowTs < timeout) {
-                Thread.sleep(interval);
                 const receipt = this.getTransactionReceipt(hash);
                 if (receipt != null) {
                     let blockNumber = this.getBlockNumber();
@@ -18228,6 +18202,7 @@
                         return receipt;
                     }
                 }
+                wait(interval);
             }
 
             throw makeError("waitForTransaction timeout", "TIMEOUT", {operation: "waitForTransaction", hash: hash});
@@ -18740,7 +18715,7 @@
                 try {
                     const tx = this.provider.getTransaction(hash);
                     if (tx != null) {
-                        return (tx.replaceableTransaction(blockNumber));
+                        return tx.replaceableTransaction(blockNumber);
                     }
                 }
                 catch (error) {
@@ -18768,11 +18743,9 @@
                             throw error;
                         }
                     }
-                }
-                finally {
-                    Thread.sleep(4000);
-                }
 
+                    wait(4000);
+                }
             }
         }
         signTransaction(_tx) {
@@ -20490,9 +20463,6 @@
             array[j] = tmp;
         }
     }
-    function stall$2(duration) {
-        Thread.sleep(duration);
-    }
     function getTime() { return (new Date()).getTime(); }
     function stringify(value) {
         return JSON.stringify(value, (key, value) => {
@@ -20839,7 +20809,7 @@
             // Start a staller; when this times out, it's time to force
             // kicking off another runner because we are taking too long
             runner.staller = (() => {
-                stall$2(config.stallTimeout);
+                wait(config.stallTimeout);
                 runner.staller = null;
             })();
             running.add(runner);
@@ -21081,10 +21051,6 @@
         }
     }
 
-    function isWebSocketLike(value) {
-        return (value && typeof (value.send) === "function" &&
-            typeof (value.close) === "function");
-    }
     const Testnets = "goerli kovan sepolia classicKotti optimism-goerli arbitrum-goerli matic-mumbai bnbt".split(" ");
     /**
      *  Returns a default provider for %%network%%.
@@ -23202,9 +23168,6 @@
         return { address, privateKey: id(seedHex) };
     }
 
-    function stall(duration) {
-        Thread.sleep(duration);
-    }
     /**
      *  A **Wallet** manages a single private key which is used to sign
      *  transactions, messages and other common payloads.
