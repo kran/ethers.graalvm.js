@@ -31,7 +31,7 @@
         }
         newReq.headerMap(req.headers, true);
 
-        return Promise.resolve(newReq.execute());
+        return newReq.execute();
     }
 
     /**
@@ -64,13 +64,8 @@
      *  Resolves to a new object that is a copy of %%value%%, but with all
      *  values resolved.
      */
-    async function resolveProperties(value) {
-        const keys = Object.keys(value);
-        const results = await Promise.all(keys.map((k) => Promise.resolve(value[k])));
-        return results.reduce((accum, v, index) => {
-            accum[keys[index]] = v;
-            return accum;
-        }, {});
+    function resolveProperties(value) {
+        return value;
     };
     /**
      *  Assigns the %%values%% to %%target%% as read-only values.
@@ -803,11 +798,11 @@
         /**
          *  Unregister the triggered listener for future events.
          */
-        async removeListener() {
+        removeListener() {
             if (this.#listener == null) {
                 return;
             }
-            await this.emitter.off(this.filter, this.#listener);
+            this.emitter.off(this.filter, this.#listener);
         }
     }
 
@@ -1029,7 +1024,7 @@
     }
 
     function createGetUrl(options) {
-        async function getUrl(req, _signal) {
+        function getUrl(req, _signal) {
             assert(_signal == null || !_signal.cancelled, "request cancelled before sending", "CANCELLED");
             const protocol = req.url.split(":")[0].toLowerCase();
             assert(protocol === "http" || protocol === "https", `unsupported protocol ${protocol}`, "UNSUPPORTED_OPERATION", {
@@ -1053,7 +1048,7 @@
             // }
             let resp;
             try {
-                resp = await fetch(req);
+                resp = fetch(req);
             }
             catch (_error) {
                 throw _error;
@@ -1104,7 +1099,7 @@
     // If locked, new Gateways cannot be added
     let locked$5 = false;
     // https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs
-    async function dataGatewayFunc(url, signal) {
+    function dataGatewayFunc(url, signal) {
         try {
             const match = url.match(reData);
             if (!match) {
@@ -1123,7 +1118,7 @@
      *  IPFS gateway hosted at %%baseUrl%%.
      */
     function getIpfsGatewayFunc(baseUrl) {
-        async function gatewayIpfs(url, signal) {
+        function gatewayIpfs(url, signal) {
             try {
                 const match = url.match(reIpfs);
                 if (!match) {
@@ -1192,7 +1187,7 @@
      *
      *  @example:
      *    req = new FetchRequest("https://www.ricmoo.com")
-     *    resp = await req.send()
+     *    resp = req.send()
      *    resp.body.length
      *    //_result:
      */
@@ -1489,7 +1484,7 @@
                 this.#throttle.maxAttempts = params.maxAttempts;
             }
         }
-        async #send(attempt, expires, delay, _request, _response) {
+        #send(attempt, expires, delay, _request, _response) {
             if (attempt >= this.#throttle.maxAttempts) {
                 return _response.makeServerError("exceeded maximum retry limit");
             }
@@ -1497,19 +1492,19 @@
                 operation: "request.send", reason: "timeout", request: _request
             });
             if (delay > 0) {
-                await wait(delay);
+                wait(delay);
             }
             let req = this.clone();
             const scheme = (req.url.split(":")[0] || "").toLowerCase();
             // Process any Gateways
             if (scheme in Gateways) {
-                const result = await Gateways[scheme](req.url, checkSignal(_request.#signal));
+                const result = Gateways[scheme](req.url, checkSignal(_request.#signal));
                 if (result instanceof FetchResponse) {
                     let response = result;
                     if (this.processFunc) {
                         checkSignal(_request.#signal);
                         try {
-                            response = await this.processFunc(req, response);
+                            response = this.processFunc(req, response);
                         }
                         catch (error) {
                             // Something went wrong during processing; throw a 5xx server error
@@ -1525,9 +1520,9 @@
             }
             // We have a preflight function; update the request
             if (this.preflightFunc) {
-                req = await this.preflightFunc(req);
+                req = this.preflightFunc(req);
             }
-            const resp = await this.getUrlFunc(req, checkSignal(_request.#signal));
+            const resp = this.getUrlFunc(req, checkSignal(_request.#signal));
             let response = new FetchResponse(resp.statusCode, resp.statusMessage, resp.headers, resp.body, _request);
             if (response.statusCode === 301 || response.statusCode === 302) {
                 // Redirect
@@ -1541,7 +1536,7 @@
             }
             else if (response.statusCode === 429) {
                 // Throttle
-                if (this.retryFunc == null || (await this.retryFunc(req, response, attempt))) {
+                if (this.retryFunc == null || (this.retryFunc(req, response, attempt))) {
                     const retryAfter = response.headers["retry-after"];
                     let delay = this.#throttle.slotInterval * Math.trunc(Math.random() * Math.pow(2, attempt));
                     if (typeof (retryAfter) === "string" && retryAfter.match(/^[1-9][0-9]*$/)) {
@@ -1553,7 +1548,7 @@
             if (this.processFunc) {
                 checkSignal(_request.#signal);
                 try {
-                    response = await this.processFunc(req, response);
+                    response = this.processFunc(req, response);
                 }
                 catch (error) {
                     // Something went wrong during processing; throw a 5xx server error
@@ -1917,11 +1912,7 @@
         }));
     }
     function wait(delay) {
-        // return new Promise((resolve) => setTimeout(resolve, delay));
-        return new Promise((resolve) => {
-            Thread.sleep(delay);
-            resolve();
-        });
+        Thread.sleep(delay);
     }
 
     /**
@@ -2684,7 +2675,7 @@
     const Padding = new Uint8Array(WordSize);
     // Properties used to immediate pass through to the underlying object
     // - `then` is used to detect if an object is a Promise for await
-    const passProperties$1 = ["then"];
+    const passProperties = ["then"];
     const _guard$4 = {};
     const resultNames = new WeakMap();
     function getNames(result) {
@@ -2795,7 +2786,7 @@
                             return item;
                         }
                         // Pass important checks (like `then` for Promise) through
-                        if (passProperties$1.indexOf(prop) >= 0) {
+                        if (passProperties.indexOf(prop) >= 0) {
                             return Reflect.get(target, prop, receiver);
                         }
                         const value = target[prop];
@@ -3191,11 +3182,11 @@
     if (!isLE)
         throw new Error('Non little-endian hardware is not supported');
     // There is no setImmediate in browser and setTimeout is slow.
-    // call of async fn will return Promise, which will be fullfiled only on
+    // call of fn will return Promise, which will be fullfiled only on
     // next scheduler queue processing step and this is exactly what we need.
-    const nextTick = async () => { };
+    const nextTick = () => { };
     // Returns control to thread each 'tick' ms to avoid blocking
-    async function asyncLoop(iters, tick, cb) {
+    function asyncLoop(iters, tick, cb) {
         let ts = Date.now();
         for (let i = 0; i < iters; i++) {
             cb(i);
@@ -3203,7 +3194,7 @@
             const diff = Date.now() - ts;
             if (diff >= 0 && diff < tick)
                 continue;
-            await nextTick();
+            nextTick();
             ts += diff;
         }
     }
@@ -3348,7 +3339,7 @@
     const hmac = (hash, key, message) => new HMAC(hash, key).update(message).digest();
     hmac.create = (hash, key) => new HMAC(hash, key);
 
-    // Common prologue and epilogue for sync/async functions
+    // Common prologue and epilogue for sync/functions
     function pbkdf2Init(hash$1, _password, _salt, _opts) {
         hash(hash$1);
         const opts = checkOpts({ dkLen: 32, asyncTick: 10 }, _opts);
@@ -4471,7 +4462,7 @@
             XorAndSalsa(out, head, input, (ii += 16), out, tail); // tail[i] = Salsa(blockIn[2*i+1] ^ head[i])
         }
     }
-    // Common prologue and epilogue for sync/async functions
+    // Common prologue and epilogue for sync/functions
     function scryptInit(password, salt, _opts) {
         // Maxmem - 1GB+1KB by default
         const opts = checkOpts({
@@ -4506,7 +4497,7 @@
             throw new Error(`Scrypt: parameters too large, ${memUsed} (128 * r * (N + p)) > ${maxmem} (maxmem)`);
         }
         // [B0...Bp−1] ← PBKDF2HMAC-SHA256(Passphrase, Salt, 1, blockSize*ParallelizationFactor)
-        // Since it has only one iteration there is no reason to use async variant
+        // Since it has only one iteration there is no reason to use variant
         const B = pbkdf2$1(sha256$1, password, salt, { c: 1, dkLen: blockSize * p });
         const B32 = u32(B);
         // Re-used between parallel iterations. Array(iterations) of B
@@ -4543,7 +4534,7 @@
      * - `r` is block size (8 is common), fine-tunes sequential memory read size and performance
      * - `p` is parallelization factor (1 is common)
      * - `dkLen` is output key length in bytes e.g. 32.
-     * - `asyncTick` - (default: 10) max time in ms for which async function can block execution
+     * - `asyncTick` - (default: 10) max time in ms for which function can block execution
      * - `maxmem` - (default: `1024 ** 3 + 1024` aka 1GB+1KB). A limit that the app could use for scrypt
      * - `onProgress` - callback function that would be executed for progress report
      * @returns Derived key
@@ -4574,20 +4565,20 @@
     /**
      * Scrypt KDF from RFC 7914.
      */
-    async function scryptAsync(password, salt, opts) {
+    function scryptAsync(password, salt, opts) {
         const { N, r, p, dkLen, blockSize32, V, B32, B, tmp, blockMixCb, asyncTick } = scryptInit(password, salt, opts);
         for (let pi = 0; pi < p; pi++) {
             const Pi = blockSize32 * pi;
             for (let i = 0; i < blockSize32; i++)
                 V[i] = B32[Pi + i]; // V[0] = B[i]
             let pos = 0;
-            await asyncLoop(N - 1, asyncTick, () => {
+            asyncLoop(N - 1, asyncTick, () => {
                 BlockMix(V, pos, V, (pos += blockSize32), r); // V[i] = BlockMix(V[i-1]);
                 blockMixCb();
             });
             BlockMix(V, (N - 1) * blockSize32, B32, Pi, r); // Process last element
             blockMixCb();
-            await asyncLoop(N, asyncTick, () => {
+            asyncLoop(N, asyncTick, () => {
                 // First u32 of the last 64-byte block (u32 is LE)
                 const j = B32[Pi + blockSize32 - 16] % N; // j = Integrify(X) % iterations
                 for (let k = 0; k < blockSize32; k++)
@@ -4600,8 +4591,8 @@
     }
 
     let lockedSync = false, lockedAsync = false;
-    const _scryptAsync = async function (passwd, salt, N, r, p, dkLen, onProgress) {
-        return await scryptAsync(passwd, salt, { N, r, p, dkLen, onProgress });
+    const _scryptAsync = function (passwd, salt, N, r, p, dkLen, onProgress) {
+        return scryptAsync(passwd, salt, { N, r, p, dkLen, onProgress });
     };
     const _scryptSync = function (passwd, salt, N, r, p, dkLen) {
         return scrypt$1(passwd, salt, { N, r, p, dkLen });
@@ -4645,10 +4636,10 @@
      *    scrypt(passwordBytes, salt, 1024, 8, 1, 16)
      *    //_result:
      */
-    async function scrypt(_passwd, _salt, N, r, p, dkLen, progress) {
+    function scrypt(_passwd, _salt, N, r, p, dkLen, progress) {
         const passwd = getBytes(_passwd, "passwd");
         const salt = getBytes(_salt, "salt");
-        return hexlify(await __scryptAsync(passwd, salt, N, r, p, dkLen, progress));
+        return hexlify(__scryptAsync(passwd, salt, N, r, p, dkLen, progress));
     }
     scrypt._ = _scryptAsync;
     scrypt.lock = function () { lockedAsync = true; };
@@ -4664,7 +4655,7 @@
      *
      *  This will completely lock up and freeze the UI in a browser and will
      *  prevent any event loop from progressing. For this reason, it is
-     *  preferred to use the [async variant](scrypt).
+     *  preferred to use the [variant](scrypt).
      *
      *  @_docloc: api/crypto:Passwords
      *
@@ -7397,8 +7388,7 @@
         catch (error) { }
         return false;
     }
-    async function checkAddress(target, promise) {
-        const result = await promise;
+    function checkAddress(target, result) {
         if (result == null || result === "0x0000000000000000000000000000000000000000") {
             assert(typeof (target) !== "string", "unconfigured name", "UNCONFIGURED_NAME", { value: target });
             assertArgument(false, "invalid AddressLike value; did not resolve to a value address", "target", target);
@@ -11236,7 +11226,7 @@
          * Resolves to the value from resolving all addresses in %%value%% for
          * %%types%% and the %%domain%%.
          */
-        static async resolveNames(domain, types, value, resolveName) {
+        static resolveNames(domain, types, value, resolveName) {
             // Make a copy to isolate it from the object passed in
             domain = Object.assign({}, domain);
             // Allow passing null to ignore value
@@ -11262,7 +11252,7 @@
             });
             // Lookup each name
             for (const name in ensCache) {
-                ensCache[name] = await resolveName(name);
+                ensCache[name] = resolveName(name);
             }
             // Replace the domain verifyingContract if needed
             if (domain.verifyingContract && ensCache[domain.verifyingContract]) {
@@ -11913,12 +11903,7 @@
                 return;
             }
             const result = process(this.type, value);
-            if (result.then) {
-                promises.push((async function () { setValue(await result); })());
-            }
-            else {
-                setValue(result);
-            }
+            setValue(result);
         }
         /**
          *  Walks the **ParamType** with %%value%%, asynchronously calling
@@ -11927,15 +11912,11 @@
          *  This can be used to resolve ENS names by walking and resolving each
          *  ``"address"`` type.
          */
-        async walkAsync(value, process) {
-            const promises = [];
+        walkAsync(value, process) {
             const result = [value];
-            this.#walkAsync(promises, value, process, (value) => {
+            this.#walkAsync([], value, process, (value) => {
                 result[0] = value;
             });
-            if (promises.length) {
-                await Promise.all(promises);
-            }
             return result[0];
         }
         /**
@@ -14325,7 +14306,7 @@
         /**
          *  Get the transaction at %%indexe%% within this block.
          */
-        async getTransaction(indexOrHash) {
+        getTransaction(indexOrHash) {
             // Find the internal value by its index or hash
             let tx = undefined;
             if (typeof (indexOrHash) === "number") {
@@ -14354,7 +14335,7 @@
                 throw new Error("no such tx");
             }
             if (typeof (tx) === "string") {
-                return (await this.provider.getTransaction(tx));
+                return (this.provider.getTransaction(tx));
             }
             else {
                 return tx;
@@ -14494,16 +14475,16 @@
         /**
          *  Returns the block that this log occurred in.
          */
-        async getBlock() {
-            const block = await this.provider.getBlock(this.blockHash);
+        getBlock() {
+            const block = this.provider.getBlock(this.blockHash);
             assert(!!block, "failed to find transaction", "UNKNOWN_ERROR", {});
             return block;
         }
         /**
          *  Returns the transaction that this log occurred in.
          */
-        async getTransaction() {
-            const tx = await this.provider.getTransaction(this.transactionHash);
+        getTransaction() {
+            const tx = this.provider.getTransaction(this.transactionHash);
             assert(!!tx, "failed to find transaction", "UNKNOWN_ERROR", {});
             return tx;
         }
@@ -14511,8 +14492,8 @@
          *  Returns the transaction receipt fot the transaction that this
          *  log occurred in.
          */
-        async getTransactionReceipt() {
-            const receipt = await this.provider.getTransactionReceipt(this.transactionHash);
+        getTransactionReceipt() {
+            const receipt = this.provider.getTransactionReceipt(this.transactionHash);
             assert(!!receipt, "failed to find transaction receipt", "UNKNOWN_ERROR", {});
             return receipt;
         }
@@ -14722,8 +14703,8 @@
         /**
          *  Resolves to the block this transaction occurred in.
          */
-        async getBlock() {
-            const block = await this.provider.getBlock(this.blockHash);
+        getBlock() {
+            const block = this.provider.getBlock(this.blockHash);
             if (block == null) {
                 throw new Error("TODO");
             }
@@ -14732,8 +14713,8 @@
         /**
          *  Resolves to the transaction this transaction occurred in.
          */
-        async getTransaction() {
-            const tx = await this.provider.getTransaction(this.hash);
+        getTransaction() {
+            const tx = this.provider.getTransaction(this.hash);
             if (tx == null) {
                 throw new Error("TODO");
             }
@@ -14745,14 +14726,14 @@
          *  Support for this feature is limited, as it requires an archive node
          *  with the ``debug_`` or ``trace_`` API enabled.
          */
-        async getResult() {
-            return (await this.provider.getTransactionResult(this.hash));
+        getResult() {
+            return (this.provider.getTransactionResult(this.hash));
         }
         /**
          *  Resolves to the number of confirmations this transaction has.
          */
-        async confirmations() {
-            return (await this.provider.getBlockNumber()) - this.blockNumber + 1;
+        confirmations() {
+            return (this.provider.getBlockNumber()) - this.blockNumber + 1;
         }
         /**
          *  @_ignore:
@@ -14780,7 +14761,7 @@
     class TransactionResponse {
         /**
          *  The provider this is connected to, which will influence how its
-         *  methods will resolve its async inspection methods.
+         *  methods will resolve its inspection methods.
          */
         provider;
         /**
@@ -14945,10 +14926,10 @@
          *
          *  This will return null if the transaction has not been included yet.
          */
-        async getBlock() {
+        getBlock() {
             let blockNumber = this.blockNumber;
             if (blockNumber == null) {
-                const tx = await this.getTransaction();
+                const tx = this.getTransaction();
                 if (tx) {
                     blockNumber = tx.blockNumber;
                 }
@@ -14967,15 +14948,15 @@
          *  provider. This can be used if you have an unmined transaction
          *  and wish to get an up-to-date populated instance.
          */
-        async getTransaction() {
+        getTransaction() {
             return this.provider.getTransaction(this.hash);
         }
         /**
          *  Resolve to the number of confirmations this transaction has.
          */
-        async confirmations() {
+        confirmations() {
             if (this.blockNumber == null) {
-                const { tx, blockNumber } = await resolveProperties({
+                const { tx, blockNumber } = resolveProperties({
                     tx: this.getTransaction(),
                     blockNumber: this.provider.getBlockNumber()
                 });
@@ -14985,7 +14966,7 @@
                 }
                 return blockNumber - tx.blockNumber + 1;
             }
-            const blockNumber = await this.provider.getBlockNumber();
+            const blockNumber = this.provider.getBlockNumber();
             return blockNumber - this.blockNumber + 1;
         }
         /**
@@ -14997,19 +14978,19 @@
          *  and the transaction has not been mined, otherwise this will
          *  wait until enough confirmations have completed.
          */
-        async wait(_confirms, _timeout) {
+        wait(_confirms, _timeout) {
             const confirms = (_confirms == null) ? 1 : _confirms;
             const timeout = (_timeout == null) ? 0 : _timeout;
             const interval = (arguments[2] == null) ? 0 : arguments[2];
             let startBlock = this.#startBlock;
             let nextScan = -1;
             let stopScanning = (startBlock === -1) ? true : false;
-            const checkReplacement = async () => {
+            const checkReplacement = () => {
                 // Get the current transaction count for this sender
                 if (stopScanning) {
                     return null;
                 }
-                const { blockNumber, nonce } = await resolveProperties({
+                const { blockNumber, nonce } = resolveProperties({
                     blockNumber: this.provider.getBlockNumber(),
                     nonce: this.provider.getTransactionCount(this.from)
                 });
@@ -15023,7 +15004,7 @@
                 if (stopScanning) {
                     return null;
                 }
-                const mined = await this.getTransaction();
+                const mined = this.getTransaction();
                 if (mined && mined.blockNumber != null) {
                     return;
                 }
@@ -15040,7 +15021,7 @@
                     if (stopScanning) {
                         return null;
                     }
-                    const block = await this.provider.getBlock(nextScan, true);
+                    const block = this.provider.getBlock(nextScan, true);
                     // This should not happen; but we'll try again shortly
                     if (block == null) {
                         return;
@@ -15053,13 +15034,13 @@
                     }
                     // Search for the transaction that replaced us
                     for (let i = 0; i < block.length; i++) {
-                        const tx = await block.getTransaction(i);
+                        const tx = block.getTransaction(i);
                         if (tx.from === this.from && tx.nonce === this.nonce) {
                             // Get the receipt
                             if (stopScanning) {
                                 return null;
                             }
-                            const receipt = await this.provider.getTransactionReceipt(tx.hash);
+                            const receipt = this.provider.getTransactionReceipt(tx.hash);
                             // This should not happen; but we'll try again shortly
                             if (receipt == null) {
                                 return;
@@ -15103,61 +15084,52 @@
                     }, receipt
                 });
             };
-            const receipt = await this.provider.getTransactionReceipt(this.hash);
+            const receipt = this.provider.getTransactionReceipt(this.hash);
             if (confirms === 0) {
                 return checkReceipt(receipt);
             }
             if (receipt) {
-                if ((await receipt.confirmations()) >= confirms) {
+                if ((receipt.confirmations()) >= confirms) {
                     return checkReceipt(receipt);
                 }
             }
             else {
                 // Check for a replacement; throws if a replacement was found
-                await checkReplacement();
+                checkReplacement();
                 // Allow null only when the confirms is 0
                 if (confirms === 0) {
                     return null;
                 }
             }
-            const waiter = new Promise(async (resolve, reject) => {
+            const waiter = ((resolve, reject) => {
                 // Set up any timeout requested
                 const nowTs = Date.now();
                 while(true) {
                     Thread.sleep(interval);
 
                     if(timeout > 0 && Date.now() - nowTs > timeout) {
-                        reject(makeError("wait transaction timeout", "TIMEOUT", {operation: "wait"}));
-                        return;
+                        throw (makeError("wait transaction timeout", "TIMEOUT", {operation: "wait"}));
                     }
 
                     try {
                         // Check for a replacement; this throws only if one is found
-                        await checkReplacement();
+                        checkReplacement();
                     } catch (error) {
                         // We were replaced (with enough confirms); re-throw the error
                         if (isError(error, "TRANSACTION_REPLACED")) {
-                            reject(error);
-                            return;
+                            throw error;
                         }
                     }
 
-                    const receipt = await this.provider.getTransactionReceipt(this.hash);
+                    const receipt = this.provider.getTransactionReceipt(this.hash);
                     // Done; return it!
-                    if ((await receipt.confirmations()) >= confirms) {
-                        try {
-                            resolve(checkReceipt(receipt));
-                        } catch (error) {
-                            reject(error);
-                        }
-                        finally {
-                            return;
-                        }
+                    if ((receipt.confirmations()) >= confirms) {
+                        return (checkReceipt(receipt));
                     }
                 }
-            });
+            })();
 
-            return await waiter;
+            return waiter;
         }
         /**
          *  Returns ``true`` if this transaction has been included.
@@ -15369,8 +15341,8 @@
          *  and the transaction has not been mined, otherwise this will
          *  wait until enough confirmations have completed.
          */
-        async wait(confirms, timeout) {
-            const receipt = await super.wait(confirms, timeout);
+        wait(confirms, timeout) {
+            const receipt = super.wait(confirms, timeout);
             if (receipt == null) {
                 return null;
             }
@@ -15396,20 +15368,20 @@
         /**
          *  Resolves to the block the event occured in.
          */
-        async getBlock() {
-            return await this.log.getBlock();
+        getBlock() {
+            return this.log.getBlock();
         }
         /**
          *  Resolves to the transaction the event occured in.
          */
-        async getTransaction() {
-            return await this.log.getTransaction();
+        getTransaction() {
+            return this.log.getTransaction();
         }
         /**
          *  Resolves to the transaction receipt the event occured in.
          */
-        async getTransactionReceipt() {
-            return await this.log.getTransactionReceipt();
+        getTransactionReceipt() {
+            return this.log.getTransactionReceipt();
         }
     }
     /**
@@ -15474,8 +15446,8 @@
             // Recursively descend into args and resolve any addresses
             const runner = getRunner(contract.runner, "resolveName");
             const resolver = canResolve(runner) ? runner : null;
-            this.#filter = (async function () {
-                const resolvedArgs = await Promise.all(fragment.inputs.map((param, index) => {
+            this.#filter = (function () {
+                const resolvedArgs = (fragment.inputs.map((param, index) => {
                     const arg = args[index];
                     if (arg == null) {
                         return null;
@@ -15483,13 +15455,13 @@
                     return param.walkAsync(args[index], (type, value) => {
                         if (type === "address") {
                             if (Array.isArray(value)) {
-                                return Promise.all(value.map((v) => resolveAddress(v, resolver)));
+                                return value.map((v) => resolveAddress(v, resolver));
                             }
                             return resolveAddress(value, resolver);
                         }
                         return value;
                     });
-                }));
+                }))();
                 return contract.interface.encodeFilterTopics(fragment, resolvedArgs);
             })();
         }
@@ -15524,7 +15496,7 @@
     /**
      *  @_ignore:
      */
-    async function copyOverrides(arg, allowed) {
+    function copyOverrides(arg, allowed) {
         // Make sure the overrides passed in are a valid overrides object
         const _overrides = Typed.dereference(arg, "overrides");
         assertArgument(typeof (_overrides) === "object", "invalid overrides parameter", "overrides", arg);
@@ -15541,11 +15513,11 @@
     /**
      *  @_ignore:
      */
-    async function resolveArgs(_runner, inputs, args) {
+    function resolveArgs(_runner, inputs, args) {
         // Recursively descend into args and resolve any addresses
         const runner = getRunner(_runner, "resolveName");
         const resolver = canResolve(runner) ? runner : null;
-        return await Promise.all(inputs.map((param, index) => {
+        return inputs.map((param, index) => {
             return param.walkAsync(args[index], (type, value) => {
                 value = Typed.dereference(value, type);
                 if (type === "address") {
@@ -15553,15 +15525,15 @@
                 }
                 return value;
             });
-        }));
+        });
     }
     function buildWrappedFallback(contract) {
-        const populateTransaction = async function (overrides) {
+        const populateTransaction = function (overrides) {
             // If an overrides was passed in, copy it and normalize the values
-            const tx = (await copyOverrides(overrides, ["data"]));
-            tx.to = await contract.getAddress();
+            const tx = (copyOverrides(overrides, ["data"]));
+            tx.to = contract.getAddress();
             if (tx.from) {
-                tx.from = await resolveAddress(tx.from, getResolver(contract.runner));
+                tx.from = resolveAddress(tx.from, getResolver(contract.runner));
             }
             const iface = contract.interface;
             const noValue = (getBigInt((tx.value || BN_0$1), "overrides.value") === BN_0$1);
@@ -15577,12 +15549,12 @@
             assertArgument(iface.fallback || noData, "cannot send data to receive-only contract", "overrides.data", tx.data);
             return tx;
         };
-        const staticCall = async function (overrides) {
+        const staticCall = function (overrides) {
             const runner = getRunner(contract.runner, "call");
             assert(canCall(runner), "contract runner does not support calling", "UNSUPPORTED_OPERATION", { operation: "call" });
-            const tx = await populateTransaction(overrides);
+            const tx = populateTransaction(overrides);
             try {
-                return await runner.call(tx);
+                return runner.call(tx);
             }
             catch (error) {
                 if (isCallException(error) && error.data) {
@@ -15591,22 +15563,22 @@
                 throw error;
             }
         };
-        const send = async function (overrides) {
+        const send = function (overrides) {
             const runner = contract.runner;
             assert(canSend(runner), "contract runner does not support sending transactions", "UNSUPPORTED_OPERATION", { operation: "sendTransaction" });
-            const tx = await runner.sendTransaction(await populateTransaction(overrides));
+            const tx = runner.sendTransaction(populateTransaction(overrides));
             const provider = getProvider(contract.runner);
             // @TODO: the provider can be null; make a custom dummy provider that will throw a
             // meaningful error
             return new ContractTransactionResponse(contract.interface, provider, tx);
         };
-        const estimateGas = async function (overrides) {
+        const estimateGas = function (overrides) {
             const runner = getRunner(contract.runner, "estimateGas");
             assert(canEstimate(runner), "contract runner does not support gas estimation", "UNSUPPORTED_OPERATION", { operation: "estimateGas" });
-            return await runner.estimateGas(await populateTransaction(overrides));
+            return runner.estimateGas(populateTransaction(overrides));
         };
-        const method = async (overrides) => {
-            return await send(overrides);
+        const method = (overrides) => {
+            return send(overrides);
         };
         defineProperties(method, {
             _contract: contract,
@@ -15625,53 +15597,53 @@
             });
             return fragment;
         };
-        const populateTransaction = async function (...args) {
+        const populateTransaction = function (...args) {
             const fragment = getFragment(...args);
             // If an overrides was passed in, copy it and normalize the values
             let overrides = {};
             if (fragment.inputs.length + 1 === args.length) {
-                overrides = await copyOverrides(args.pop());
+                overrides = copyOverrides(args.pop());
                 if (overrides.from) {
-                    overrides.from = await resolveAddress(overrides.from, getResolver(contract.runner));
+                    overrides.from = resolveAddress(overrides.from, getResolver(contract.runner));
                 }
             }
             if (fragment.inputs.length !== args.length) {
                 throw new Error("internal error: fragment inputs doesn't match arguments; should not happen");
             }
-            const resolvedArgs = await resolveArgs(contract.runner, fragment.inputs, args);
-            return Object.assign({}, overrides, await resolveProperties({
+            const resolvedArgs = resolveArgs(contract.runner, fragment.inputs, args);
+            return Object.assign({}, overrides, resolveProperties({
                 to: contract.getAddress(),
                 data: contract.interface.encodeFunctionData(fragment, resolvedArgs)
             }));
         };
-        const staticCall = async function (...args) {
-            const result = await staticCallResult(...args);
+        const staticCall = function (...args) {
+            const result = staticCallResult(...args);
             if (result.length === 1) {
                 return result[0];
             }
             return result;
         };
-        const send = async function (...args) {
+        const send = function (...args) {
             const runner = contract.runner;
             assert(canSend(runner), "contract runner does not support sending transactions", "UNSUPPORTED_OPERATION", { operation: "sendTransaction" });
-            const tx = await runner.sendTransaction(await populateTransaction(...args));
+            const tx = runner.sendTransaction(populateTransaction(...args));
             const provider = getProvider(contract.runner);
             // @TODO: the provider can be null; make a custom dummy provider that will throw a
             // meaningful error
             return new ContractTransactionResponse(contract.interface, provider, tx);
         };
-        const estimateGas = async function (...args) {
+        const estimateGas = function (...args) {
             const runner = getRunner(contract.runner, "estimateGas");
             assert(canEstimate(runner), "contract runner does not support gas estimation", "UNSUPPORTED_OPERATION", { operation: "estimateGas" });
-            return await runner.estimateGas(await populateTransaction(...args));
+            return runner.estimateGas(populateTransaction(...args));
         };
-        const staticCallResult = async function (...args) {
+        const staticCallResult = function (...args) {
             const runner = getRunner(contract.runner, "call");
             assert(canCall(runner), "contract runner does not support calling", "UNSUPPORTED_OPERATION", { operation: "call" });
-            const tx = await populateTransaction(...args);
+            const tx = populateTransaction(...args);
             let result = "0x";
             try {
-                result = await runner.call(tx);
+                result = runner.call(tx);
             }
             catch (error) {
                 if (isCallException(error) && error.data) {
@@ -15682,12 +15654,12 @@
             const fragment = getFragment(...args);
             return contract.interface.decodeFunctionResult(fragment, result);
         };
-        const method = async (...args) => {
+        const method = (...args) => {
             const fragment = getFragment(...args);
             if (fragment.constant) {
-                return await staticCall(...args);
+                return staticCall(...args);
             }
-            return await send(...args);
+            return send(...args);
         };
         defineProperties(method, {
             name: contract.interface.getFunctionName(key),
@@ -15760,7 +15732,7 @@
         return (value && typeof (value) === "object" && ("getTopicFilter" in value) &&
             (typeof (value.getTopicFilter) === "function") && value.fragment);
     }
-    async function getSubInfo(contract, event) {
+    function getSubInfo(contract, event) {
         let topics;
         let fragment = null;
         // Convert named events to topicHash and get the fragment for
@@ -15802,7 +15774,7 @@
         }
         else if (isDeferred(event)) {
             // Deferred Topic Filter; e.g. `contract.filter.Transfer(from)`
-            topics = await event.getTopicFilter();
+            topics = event.getTopicFilter();
         }
         else if ("fragment" in event) {
             // ContractEvent; e.g. `contract.filter.Transfer`
@@ -15838,101 +15810,7 @@
         }).join("&");
         return { fragment, tag, topics };
     }
-    async function hasSub(contract, event) {
-        const { subs } = getInternal(contract);
-        return subs.get((await getSubInfo(contract, event)).tag) || null;
-    }
-    async function getSub(contract, operation, event) {
-        // Make sure our runner can actually subscribe to events
-        const provider = getProvider(contract.runner);
-        assert(provider, "contract runner does not support subscribing", "UNSUPPORTED_OPERATION", { operation });
-        const { fragment, tag, topics } = await getSubInfo(contract, event);
-        const { addr, subs } = getInternal(contract);
-        let sub = subs.get(tag);
-        if (!sub) {
-            const address = (addr ? addr : contract);
-            const filter = { address, topics };
-            const listener = (log) => {
-                let foundFragment = fragment;
-                if (foundFragment == null) {
-                    try {
-                        foundFragment = contract.interface.getEvent(log.topics[0]);
-                    }
-                    catch (error) { }
-                }
-                // If fragment is null, we do not deconstruct the args to emit
-                if (foundFragment) {
-                    const _foundFragment = foundFragment;
-                    const args = fragment ? contract.interface.decodeEventLog(fragment, log.data, log.topics) : [];
-                    emit(contract, event, args, (listener) => {
-                        return new ContractEventPayload(contract, listener, event, _foundFragment, log);
-                    });
-                }
-                else {
-                    emit(contract, event, [], (listener) => {
-                        return new ContractUnknownEventPayload(contract, listener, event, log);
-                    });
-                }
-            };
-            let starting = [];
-            const start = () => {
-                if (starting.length) {
-                    return;
-                }
-                starting.push(provider.on(filter, listener));
-            };
-            const stop = async () => {
-                if (starting.length == 0) {
-                    return;
-                }
-                let started = starting;
-                starting = [];
-                await Promise.all(started);
-                provider.off(filter, listener);
-            };
-            sub = { tag, listeners: [], start, stop };
-            subs.set(tag, sub);
-        }
-        return sub;
-    }
-    // We use this to ensure one emit resolves before firing the next to
-    // ensure correct ordering (note this cannot throw and just adds the
-    // notice to the event queu using setTimeout).
-    let lastEmit = Promise.resolve();
-    async function _emit(contract, event, args, payloadFunc) {
-        await lastEmit;
-        const sub = await hasSub(contract, event);
-        if (!sub) {
-            return false;
-        }
-        const count = sub.listeners.length;
-        sub.listeners = sub.listeners.filter(({ listener, once }) => {
-            const passArgs = Array.from(args);
-            if (payloadFunc) {
-                passArgs.push(payloadFunc(once ? null : listener));
-            }
-            try {
-                listener.call(contract, ...passArgs);
-            }
-            catch (error) { }
-            return !once;
-        });
-        if (sub.listeners.length === 0) {
-            sub.stop();
-            getInternal(contract).subs.delete(sub.tag);
-        }
-        return (count > 0);
-    }
-    async function emit(contract, event, args, payloadFunc) {
-        try {
-            await lastEmit;
-        }
-        catch (error) { }
-        const resultPromise = _emit(contract, event, args, payloadFunc);
-        lastEmit = resultPromise;
-        return await resultPromise;
-    }
-    const passProperties = ["then"];
+
     class BaseContract {
         /**
          *  The target to connect to.
@@ -15979,7 +15857,6 @@
             const iface = Interface.from(abi);
             defineProperties(this, { target, runner, interface: iface });
             Object.defineProperty(this, internal, { value: {} });
-            let addrPromise;
             let addr = null;
             let deployTx = null;
             if (_deployTx) {
@@ -15993,7 +15870,6 @@
             if (typeof (target) === "string") {
                 if (isHexString(target)) {
                     addr = target;
-                    addrPromise = Promise.resolve(target);
                 }
                 else {
                     const resolver = getRunner(runner, "resolveName");
@@ -16002,28 +15878,21 @@
                             operation: "resolveName"
                         });
                     }
-                    addrPromise = resolver.resolveName(target).then((addr) => {
-                        if (addr == null) {
-                            throw makeError("an ENS name used for a contract target must be correctly configured", "UNCONFIGURED_NAME", {
-                                value: target
-                            });
-                        }
-                        getInternal(this).addr = addr;
-                        return addr;
-                    });
+                    addr = resolver.resolveName(target);
+                    if (addr == null) {
+                        throw makeError("an ENS name used for a contract target must be correctly configured", "UNCONFIGURED_NAME", { value: target });
+                    }
                 }
             }
             else {
-                addrPromise = target.getAddress().then((addr) => {
-                    if (addr == null) {
-                        throw new Error("TODO");
-                    }
-                    getInternal(this).addr = addr;
-                    return addr;
-                });
+                addr = target.getAddress();
+                if (addr == null) {
+                    throw new Error("TODO");
+                }
             }
+
             // Set our private values
-            setInternal(this, { addrPromise, addr, deployTx, subs });
+            setInternal(this, { addr, deployTx, subs });
             // Add the event filters
             const filters = new Proxy({}, {
                 get: (target, prop, receiver) => {
@@ -16095,14 +15964,14 @@
         /**
          *  Return the resolved address of this Contract.
          */
-        async getAddress() { return await getInternal(this).addrPromise; }
+        getAddress() { return getInternal(this).addr; }
         /**
          *  Return the deployed bytecode or null if no bytecode is found.
          */
-        async getDeployedCode() {
+        getDeployedCode() {
             const provider = getProvider(this.runner);
             assert(provider, "runner does not support .provider", "UNSUPPORTED_OPERATION", { operation: "getDeployedCode" });
-            const code = await provider.getCode(await this.getAddress());
+            const code = provider.getCode(this.getAddress());
             if (code === "0x") {
                 return null;
             }
@@ -16112,15 +15981,15 @@
          *  Resolve to this Contract once the bytecode has been deployed, or
          *  resolve immediately if already deployed.
          */
-        async waitForDeployment(interval, timeout) {
+        waitForDeployment(interval, timeout) {
             // We have the deployement transaction; just use that (throws if deployement fails)
             const deployTx = this.deploymentTransaction();
             if (deployTx) {
-                await deployTx.wait();
+                deployTx.wait();
                 return this;
             }
             // Check for code
-            const code = await this.getDeployedCode();
+            const code = this.getDeployedCode();
             if (code != null) {
                 return this;
             }
@@ -16130,7 +15999,7 @@
             const nowTs = Date.now();
             while(Date.now() - nowTs > timeout) {
                 Thread.sleep(interval);
-                const code = await this.getDeployedCode();
+                const code = this.getDeployedCode();
                 if (code != null) {
                     return this;
                 }
@@ -16173,19 +16042,19 @@
         /**
          *  @_ignore:
          */
-        async queryTransaction(hash) {
+        queryTransaction(hash) {
             throw new Error("@TODO");
         }
         /*
         // @TODO: this is a non-backwards compatible change, but will be added
         //        in v7 and in a potential SmartContract class in an upcoming
         //        v6 release
-        async getTransactionReceipt(hash: string): Promise<null | ContractTransactionReceipt> {
+        getTransactionReceipt(hash: string): Promise<null | ContractTransactionReceipt> {
             const provider = getProvider(this.runner);
             assert(provider, "contract runner does not have a provider",
                 "UNSUPPORTED_OPERATION", { operation: "queryTransaction" });
 
-            const receipt = await provider.getTransactionReceipt(hash);
+            const receipt = provider.getTransactionReceipt(hash);
             if (receipt == null) { return null; }
 
             return new ContractTransactionReceipt(this.interface, provider, receipt);
@@ -16196,20 +16065,20 @@
          *  %%fromBlock%% (default: ``0``) to %%toBlock%% (default: ``"latest"``)
          *  inclusive.
          */
-        async queryFilter(event, fromBlock, toBlock) {
+        queryFilter(event, fromBlock, toBlock) {
             if (fromBlock == null) {
                 fromBlock = 0;
             }
             if (toBlock == null) {
                 toBlock = "latest";
             }
-            const { addr, addrPromise } = getInternal(this);
-            const address = (addr ? addr : (await addrPromise));
-            const { fragment, topics } = await getSubInfo(this, event);
+            const { addr } = getInternal(this);
+            const address = addr;
+            const { fragment, topics } = getSubInfo(this, event);
             const filter = { address, topics, fromBlock, toBlock };
             const provider = getProvider(this.runner);
             assert(provider, "contract runner does not have a provider", "UNSUPPORTED_OPERATION", { operation: "queryFilter" });
-            return (await provider.getLogs(filter)).map((log) => {
+            return (provider.getLogs(filter)).map((log) => {
                 let foundFragment = fragment;
                 if (foundFragment == null) {
                     try {
@@ -16227,126 +16096,6 @@
                 }
                 return new Log(log, provider);
             });
-        }
-        /**
-         *  Add an event %%listener%% for the %%event%%.
-         */
-        async on(event, listener) {
-            const sub = await getSub(this, "on", event);
-            sub.listeners.push({ listener, once: false });
-            sub.start();
-            return this;
-        }
-        /**
-         *  Add an event %%listener%% for the %%event%%, but remove the listener
-         *  after it is fired once.
-         */
-        async once(event, listener) {
-            const sub = await getSub(this, "once", event);
-            sub.listeners.push({ listener, once: true });
-            sub.start();
-            return this;
-        }
-        /**
-         *  Emit an %%event%% calling all listeners with %%args%%.
-         *
-         *  Resolves to ``true`` if any listeners were called.
-         */
-        async emit(event, ...args) {
-            return await emit(this, event, args, null);
-        }
-        /**
-         *  Resolves to the number of listeners of %%event%% or the total number
-         *  of listeners if unspecified.
-         */
-        async listenerCount(event) {
-            if (event) {
-                const sub = await hasSub(this, event);
-                if (!sub) {
-                    return 0;
-                }
-                return sub.listeners.length;
-            }
-            const { subs } = getInternal(this);
-            let total = 0;
-            for (const { listeners } of subs.values()) {
-                total += listeners.length;
-            }
-            return total;
-        }
-        /**
-         *  Resolves to the listeners subscribed to %%event%% or all listeners
-         *  if unspecified.
-         */
-        async listeners(event) {
-            if (event) {
-                const sub = await hasSub(this, event);
-                if (!sub) {
-                    return [];
-                }
-                return sub.listeners.map(({ listener }) => listener);
-            }
-            const { subs } = getInternal(this);
-            let result = [];
-            for (const { listeners } of subs.values()) {
-                result = result.concat(listeners.map(({ listener }) => listener));
-            }
-            return result;
-        }
-        /**
-         *  Remove the %%listener%% from the listeners for %%event%% or remove
-         *  all listeners if unspecified.
-         */
-        async off(event, listener) {
-            const sub = await hasSub(this, event);
-            if (!sub) {
-                return this;
-            }
-            if (listener) {
-                const index = sub.listeners.map(({ listener }) => listener).indexOf(listener);
-                if (index >= 0) {
-                    sub.listeners.splice(index, 1);
-                }
-            }
-            if (listener == null || sub.listeners.length === 0) {
-                sub.stop();
-                getInternal(this).subs.delete(sub.tag);
-            }
-            return this;
-        }
-        /**
-         *  Remove all the listeners for %%event%% or remove all listeners if
-         *  unspecified.
-         */
-        async removeAllListeners(event) {
-            if (event) {
-                const sub = await hasSub(this, event);
-                if (!sub) {
-                    return this;
-                }
-                sub.stop();
-                getInternal(this).subs.delete(sub.tag);
-            }
-            else {
-                const { subs } = getInternal(this);
-                for (const { tag, stop } of subs.values()) {
-                    stop();
-                    subs.delete(tag);
-                }
-            }
-            return this;
-        }
-        /**
-         *  Alias for [on].
-         */
-        async addListener(event, listener) {
-            return await this.on(event, listener);
-        }
-        /**
-         *  Alias for [off].
-         */
-        async removeListener(event, listener) {
-            return await this.off(event, listener);
         }
         /**
          *  Create a new Class for the %%abi%%.
@@ -16431,16 +16180,16 @@
          *  Resolves to the transaction to deploy the contract, passing %%args%%
          *  into the constructor.
          */
-        async getDeployTransaction(...args) {
+        getDeployTransaction(...args) {
             let overrides = {};
             const fragment = this.interface.deploy;
             if (fragment.inputs.length + 1 === args.length) {
-                overrides = await copyOverrides(args.pop());
+                overrides = copyOverrides(args.pop());
             }
             if (fragment.inputs.length !== args.length) {
                 throw new Error("incorrect number of arguments to constructor");
             }
-            const resolvedArgs = await resolveArgs(this.runner, fragment.inputs, args);
+            const resolvedArgs = resolveArgs(this.runner, fragment.inputs, args);
             const data = concat([this.bytecode, this.interface.encodeDeploy(resolvedArgs)]);
             return Object.assign({}, overrides, { data });
         }
@@ -16452,12 +16201,12 @@
          *  network, so the [[BaseContract-waitForDeployment]] should be used before
          *  sending any transactions to it.
          */
-        async deploy(...args) {
-            const tx = await this.getDeployTransaction(...args);
+        deploy(...args) {
+            const tx = this.getDeployTransaction(...args);
             assert(this.runner && typeof (this.runner.sendTransaction) === "function", "factory runner does not support sending transactions", "UNSUPPORTED_OPERATION", {
                 operation: "sendTransaction"
             });
-            const sentTx = await this.runner.sendTransaction(tx);
+            const sentTx = this.runner.sendTransaction(tx);
             const address = getCreateAddress(sentTx);
             return new BaseContract(address, this.interface, this.runner, sentTx);
         }
@@ -16534,13 +16283,13 @@
         /**
          *  Resolves to the encoded %%address%% for %%coinType%%.
          */
-        async encodeAddress(coinType, address) {
+        encodeAddress(coinType, address) {
             throw new Error("unsupported coin");
         }
         /**
          *  Resolves to the decoded %%data%% for %%coinType%%.
          */
-        async decodeAddress(coinType, data) {
+        decodeAddress(coinType, data) {
             throw new Error("unsupported coin");
         }
     }
@@ -16586,11 +16335,11 @@
         /**
          *  Resolves to true if the resolver supports wildcard resolution.
          */
-        async supportsWildcard() {
+        supportsWildcard() {
             if (this.#supports2544 == null) {
-                this.#supports2544 = (async () => {
+                this.#supports2544 = (() => {
                     try {
-                        return await this.#resolver.supportsInterface("0x9061b923");
+                        return this.#resolver.supportsInterface("0x9061b923");
                     }
                     catch (error) {
                         // Wildcard resolvers must understand supportsInterface
@@ -16604,15 +16353,15 @@
                     }
                 })();
             }
-            return await this.#supports2544;
+            return this.#supports2544;
         }
-        async #fetch(funcName, params) {
+        #fetch(funcName, params) {
             params = (params || []).slice();
             const iface = this.#resolver.interface;
             // The first parameters is always the nodehash
             params.unshift(namehash(this.name));
             let fragment = null;
-            if (await this.supportsWildcard()) {
+            if (this.supportsWildcard()) {
                 fragment = iface.getFunction(funcName);
                 assert(fragment, "missing fragment", "UNKNOWN_ERROR", {
                     info: { funcName }
@@ -16627,7 +16376,7 @@
                 enableCcipRead: true
             });
             try {
-                const result = await this.#resolver[funcName](...params);
+                const result = this.#resolver[funcName](...params);
                 if (fragment) {
                     return iface.decodeFunctionResult(fragment, result)[0];
                 }
@@ -16644,13 +16393,13 @@
          *  Resolves to the address for %%coinType%% or null if the
          *  provided %%coinType%% has not been configured.
          */
-        async getAddress(coinType) {
+        getAddress(coinType) {
             if (coinType == null) {
                 coinType = 60;
             }
             if (coinType === 60) {
                 try {
-                    const result = await this.#fetch("addr(bytes32)");
+                    const result = this.#fetch("addr(bytes32)");
                     // No address
                     if (result == null || result === ZeroAddress) {
                         return null;
@@ -16667,7 +16416,7 @@
             // Try decoding its EVM canonical chain as an EVM chain address first
             if (coinType >= 0 && coinType < 0x80000000) {
                 let ethCoinType = coinType + 0x80000000;
-                const data = await this.#fetch("addr(bytes32,uint)", [ethCoinType]);
+                const data = this.#fetch("addr(bytes32,uint)", [ethCoinType]);
                 if (isHexString(data, 20)) {
                     return getAddress(data);
                 }
@@ -16686,13 +16435,13 @@
                 return null;
             }
             // keccak256("addr(bytes32,uint256")
-            const data = await this.#fetch("addr(bytes32,uint)", [coinType]);
+            const data = this.#fetch("addr(bytes32,uint)", [coinType]);
             // No address
             if (data == null || data === "0x") {
                 return null;
             }
             // Compute the address
-            const address = await coinPlugin.decodeAddress(coinType, data);
+            const address = coinPlugin.decodeAddress(coinType, data);
             if (address != null) {
                 return address;
             }
@@ -16705,8 +16454,8 @@
          *  Resolves to the EIP-634 text record for %%key%%, or ``null``
          *  if unconfigured.
          */
-        async getText(key) {
-            const data = await this.#fetch("text(bytes32,string)", [key]);
+        getText(key) {
+            const data = this.#fetch("text(bytes32,string)", [key]);
             if (data == null || data === "0x") {
                 return null;
             }
@@ -16715,9 +16464,9 @@
         /**
          *  Rsolves to the content-hash or ``null`` if unconfigured.
          */
-        async getContentHash() {
+        getContentHash() {
             // keccak256("contenthash()")
-            const data = await this.#fetch("contenthash(bytes32)");
+            const data = this.#fetch("contenthash(bytes32)");
             // No contenthash
             if (data == null || data === "0x") {
                 return null;
@@ -16749,8 +16498,8 @@
          *  If diagnosing issues with configurations, the [[_getAvatar]]
          *  method may be useful.
          */
-        async getAvatar() {
-            const avatar = await this._getAvatar();
+        getAvatar() {
+            const avatar = this._getAvatar();
             return avatar.url;
         }
         /**
@@ -16761,12 +16510,12 @@
          *  This method can be used to examine each step and the value it
          *  was working from.
          */
-        async _getAvatar() {
+        _getAvatar() {
             const linkage = [{ type: "name", value: this.name }];
             try {
                 // test data for ricmoo.eth
                 //const avatar = "eip155:1/erc721:0x265385c7f4132228A0d54EB1A9e7460b91c0cC68/29233";
-                const avatar = await this.getText("avatar");
+                const avatar = this.getText("avatar");
                 if (avatar == null) {
                     linkage.push({ type: "!avatar", value: "" });
                     return { url: null, linkage };
@@ -16795,7 +16544,7 @@
                             const selector = (scheme === "erc721") ? "tokenURI(uint256)" : "uri(uint256)";
                             linkage.push({ type: scheme, value: avatar });
                             // The owner of this name
-                            const owner = await this.getAddress();
+                            const owner = this.getAddress();
                             if (owner == null) {
                                 linkage.push({ type: "!owner", value: "" });
                                 return { url: null, linkage };
@@ -16816,7 +16565,7 @@
                             ], this.provider);
                             // Check that this account owns the token
                             if (scheme === "erc721") {
-                                const tokenOwner = await contract.ownerOf(tokenId);
+                                const tokenOwner = contract.ownerOf(tokenId);
                                 if (owner !== tokenOwner) {
                                     linkage.push({ type: "!owner", value: tokenOwner });
                                     return { url: null, linkage };
@@ -16824,7 +16573,7 @@
                                 linkage.push({ type: "owner", value: tokenOwner });
                             }
                             else if (scheme === "erc1155") {
-                                const balance = await contract.balanceOf(owner, tokenId);
+                                const balance = contract.balanceOf(owner, tokenId);
                                 if (!balance) {
                                     linkage.push({ type: "!balance", value: "0" });
                                     return { url: null, linkage };
@@ -16832,7 +16581,7 @@
                                 linkage.push({ type: "balance", value: balance.toString() });
                             }
                             // Call the token contract for the metadata URL
-                            let metadataUrl = await contract[selector](tokenId);
+                            let metadataUrl = contract[selector](tokenId);
                             if (metadataUrl == null || metadataUrl === "0x") {
                                 linkage.push({ type: "!metadata-url", value: "" });
                                 return { url: null, linkage };
@@ -16850,7 +16599,7 @@
                             linkage.push({ type: "metadata-url", value: metadataUrl });
                             // Get the token metadata
                             let metadata = {};
-                            const response = await (new FetchRequest(metadataUrl)).send();
+                            const response = (new FetchRequest(metadataUrl)).send();
                             response.assertOk();
                             try {
                                 metadata = response.bodyJson;
@@ -16901,8 +16650,8 @@
             catch (error) { }
             return { linkage, url: null };
         }
-        static async getEnsAddress(provider) {
-            const network = await provider.getNetwork();
+        static getEnsAddress(provider) {
+            const network = provider.getNetwork();
             const ensPlugin = network.getPlugin("org.ethers.plugins.network.Ens");
             // No ENS...
             assert(ensPlugin, "network does not support ENS", "UNSUPPORTED_OPERATION", {
@@ -16910,13 +16659,13 @@
             });
             return ensPlugin.address;
         }
-        static async #getResolver(provider, name) {
-            const ensAddr = await EnsResolver.getEnsAddress(provider);
+        static #getResolver(provider, name) {
+            const ensAddr = EnsResolver.getEnsAddress(provider);
             try {
                 const contract = new Contract(ensAddr, [
                     "function resolver(bytes32) view returns (address)"
                 ], provider);
-                const addr = await contract.resolver(namehash(name), {
+                const addr = contract.resolver(namehash(name), {
                     enableCcipRead: true
                 });
                 if (addr === ZeroAddress) {
@@ -16935,7 +16684,7 @@
          *  Resolve to the ENS resolver for %%name%% using %%provider%% or
          *  ``null`` if unconfigured.
          */
-        static async fromName(provider, name) {
+        static fromName(provider, name) {
             let currentName = name;
             while (true) {
                 if (currentName === "" || currentName === ".") {
@@ -16947,12 +16696,12 @@
                     return null;
                 }
                 // Check the current node for a resolver
-                const addr = await EnsResolver.#getResolver(provider, currentName);
+                const addr = EnsResolver.#getResolver(provider, currentName);
                 // Found a resolver!
                 if (addr != null) {
                     const resolver = new EnsResolver(provider, addr, name);
                     // Legacy resolver found, using EIP-2544 so it isn't safe to use
-                    if (currentName !== name && !(await resolver.supportsWildcard())) {
+                    if (currentName !== name && !(resolver.supportsWildcard())) {
                         return null;
                     }
                     return resolver;
@@ -17379,8 +17128,8 @@
         /**
          *  Resolves to the fee data.
          */
-        async getFeeData(provider) {
-            return await this.#feeDataFunc(provider);
+        getFeeData(provider) {
+            return this.#feeDataFunc(provider);
         }
         clone() {
             return new FeeDataNetworkPlugin(this.#feeDataFunc);
@@ -17420,12 +17169,12 @@
             this.#blockWithTxsFunc = blockWithTxsFunc;
         }
 
-        async getBlock(provider: Provider, block: BlockParams<string>): Promise<Block<string>> {
-            return await this.#blockFunc(provider, block);
+        getBlock(provider: Provider, block: BlockParams<string>): Promise<Block<string>> {
+            return this.#blockFunc(provider, block);
         }
 
-        async getBlockions(provider: Provider, block: BlockParams<TransactionResponseParams>): Promise<Block<TransactionResponse>> {
-            return await this.#blockWithTxsFunc(provider, block);
+        getBlockions(provider: Provider, block: BlockParams<TransactionResponseParams>): Promise<Block<TransactionResponse>> {
+            return this.#blockWithTxsFunc(provider, block);
         }
 
         clone(): CustomBlockNetworkPlugin {
@@ -17698,12 +17447,12 @@
     }
     // Used by Polygon to use a gas station for fee data
     function getGasStationPlugin(url) {
-        return new FetchUrlFeeDataNetworkPlugin(url, async (fetchFeeData, provider, request) => {
+        return new FetchUrlFeeDataNetworkPlugin(url, (fetchFeeData, provider, request) => {
             // Prevent Cloudflare from blocking our request in node.js
             request.setHeader("User-Agent", "ethers");
             let response;
             try {
-                const [_response, _feeData] = await Promise.all([
+                const [_response, _feeData] = Promise.all([
                     request.send(), fetchFeeData()
                 ]);
                 response = _response;
@@ -17797,277 +17546,6 @@
     function copy$2(obj) {
         return JSON.parse(JSON.stringify(obj));
     }
-    // @TODO: refactor this
-    /**
-     *  A **PollingBlockSubscriber** polls at a regular interval for a change
-     *  in the block number.
-     *
-     *  @_docloc: api/providers/abstract-provider
-     */
-    class PollingBlockSubscriber {
-        #provider;
-        #poller;
-        #interval;
-        // The most recent block we have scanned for events. The value -2
-        // indicates we still need to fetch an initial block number
-        #blockNumber;
-        /**
-         *  Create a new **PollingBlockSubscriber** attached to %%provider%%.
-         */
-        constructor(provider) {
-            this.#provider = provider;
-            this.#poller = null;
-            this.#interval = 4000;
-            this.#blockNumber = -2;
-        }
-        /**
-         *  The polling interval.
-         */
-        get pollingInterval() { return this.#interval; }
-        set pollingInterval(value) { this.#interval = value; }
-        async #poll() {
-            try {
-                const blockNumber = await this.#provider.getBlockNumber();
-                // Bootstrap poll to setup our initial block number
-                if (this.#blockNumber === -2) {
-                    this.#blockNumber = blockNumber;
-                    return;
-                }
-                // @TODO: Put a cap on the maximum number of events per loop?
-                if (blockNumber !== this.#blockNumber) {
-                    for (let b = this.#blockNumber + 1; b <= blockNumber; b++) {
-                        // We have been stopped
-                        if (this.#poller == null) {
-                            return;
-                        }
-                        await this.#provider.emit("block", b);
-                    }
-                    this.#blockNumber = blockNumber;
-                }
-            }
-            catch (error) {
-                // @TODO: Minor bump, add an "error" event to let subscribers
-                //        know things went awry.
-                //console.log(error);
-            }
-            // We have been stopped
-            if (this.#poller == null) {
-                return;
-            }
-            this.#poller = this.#provider._setTimeout(this.#poll.bind(this), this.#interval);
-        }
-        start() {
-            if (this.#poller) {
-                return;
-            }
-            this.#poller = this.#provider._setTimeout(this.#poll.bind(this), this.#interval);
-            this.#poll();
-        }
-        stop() {
-            if (!this.#poller) {
-                return;
-            }
-            this.#provider._clearTimeout(this.#poller);
-            this.#poller = null;
-        }
-        pause(dropWhilePaused) {
-            this.stop();
-            if (dropWhilePaused) {
-                this.#blockNumber = -2;
-            }
-        }
-        resume() {
-            this.start();
-        }
-    }
-    /**
-     *  An **OnBlockSubscriber** can be sub-classed, with a [[_poll]]
-     *  implmentation which will be called on every new block.
-     *
-     *  @_docloc: api/providers/abstract-provider
-     */
-    class OnBlockSubscriber {
-        #provider;
-        #poll;
-        #running;
-        /**
-         *  Create a new **OnBlockSubscriber** attached to %%provider%%.
-         */
-        constructor(provider) {
-            this.#provider = provider;
-            this.#running = false;
-            this.#poll = (blockNumber) => {
-                this._poll(blockNumber, this.#provider);
-            };
-        }
-        /**
-         *  Called on every new block.
-         */
-        async _poll(blockNumber, provider) {
-            throw new Error("sub-classes must override this");
-        }
-        start() {
-            if (this.#running) {
-                return;
-            }
-            this.#running = true;
-            this.#poll(-2);
-            this.#provider.on("block", this.#poll);
-        }
-        stop() {
-            if (!this.#running) {
-                return;
-            }
-            this.#running = false;
-            this.#provider.off("block", this.#poll);
-        }
-        pause(dropWhilePaused) { this.stop(); }
-        resume() { this.start(); }
-    }
-    class PollingBlockTagSubscriber extends OnBlockSubscriber {
-        #tag;
-        #lastBlock;
-        constructor(provider, tag) {
-            super(provider);
-            this.#tag = tag;
-            this.#lastBlock = -2;
-        }
-        pause(dropWhilePaused) {
-            if (dropWhilePaused) {
-                this.#lastBlock = -2;
-            }
-            super.pause(dropWhilePaused);
-        }
-        async _poll(blockNumber, provider) {
-            const block = await provider.getBlock(this.#tag);
-            if (block == null) {
-                return;
-            }
-            if (this.#lastBlock === -2) {
-                this.#lastBlock = block.number;
-            }
-            else if (block.number > this.#lastBlock) {
-                provider.emit(this.#tag, block.number);
-                this.#lastBlock = block.number;
-            }
-        }
-    }
-    /**
-     *  @_ignore:
-     *
-     *  @_docloc: api/providers/abstract-provider
-     */
-    class PollingOrphanSubscriber extends OnBlockSubscriber {
-        #filter;
-        constructor(provider, filter) {
-            super(provider);
-            this.#filter = copy$2(filter);
-        }
-        async _poll(blockNumber, provider) {
-            throw new Error("@TODO");
-        }
-    }
-    /**
-     *  A **PollingTransactionSubscriber** will poll for a given transaction
-     *  hash for its receipt.
-     *
-     *  @_docloc: api/providers/abstract-provider
-     */
-    class PollingTransactionSubscriber extends OnBlockSubscriber {
-        #hash;
-        /**
-         *  Create a new **PollingTransactionSubscriber** attached to
-         *  %%provider%%, listening for %%hash%%.
-         */
-        constructor(provider, hash) {
-            super(provider);
-            this.#hash = hash;
-        }
-        async _poll(blockNumber, provider) {
-            const tx = await provider.getTransactionReceipt(this.#hash);
-            if (tx) {
-                provider.emit(this.#hash, tx);
-            }
-        }
-    }
-    /**
-     *  A **PollingEventSubscriber** will poll for a given filter for its logs.
-     *
-     *  @_docloc: api/providers/abstract-provider
-     */
-    class PollingEventSubscriber {
-        #provider;
-        #filter;
-        #poller;
-        #running;
-        // The most recent block we have scanned for events. The value -2
-        // indicates we still need to fetch an initial block number
-        #blockNumber;
-        /**
-         *  Create a new **PollingTransactionSubscriber** attached to
-         *  %%provider%%, listening for %%filter%%.
-         */
-        constructor(provider, filter) {
-            this.#provider = provider;
-            this.#filter = copy$2(filter);
-            this.#poller = this.#poll.bind(this);
-            this.#running = false;
-            this.#blockNumber = -2;
-        }
-        async #poll(blockNumber) {
-            // The initial block hasn't been determined yet
-            if (this.#blockNumber === -2) {
-                return;
-            }
-            const filter = copy$2(this.#filter);
-            filter.fromBlock = this.#blockNumber + 1;
-            filter.toBlock = blockNumber;
-            const logs = await this.#provider.getLogs(filter);
-            // No logs could just mean the node has not indexed them yet,
-            // so we keep a sliding window of 60 blocks to keep scanning
-            if (logs.length === 0) {
-                if (this.#blockNumber < blockNumber - 60) {
-                    this.#blockNumber = blockNumber - 60;
-                }
-                return;
-            }
-            for (const log of logs) {
-                this.#provider.emit(this.#filter, log);
-                // Only advance the block number when logs were found to
-                // account for networks (like BNB and Polygon) which may
-                // sacrifice event consistency for block event speed
-                this.#blockNumber = log.blockNumber;
-            }
-        }
-        start() {
-            if (this.#running) {
-                return;
-            }
-            this.#running = true;
-            if (this.#blockNumber === -2) {
-                this.#provider.getBlockNumber().then((blockNumber) => {
-                    this.#blockNumber = blockNumber;
-                });
-            }
-            this.#provider.on("block", this.#poller);
-        }
-        stop() {
-            if (!this.#running) {
-                return;
-            }
-            this.#running = false;
-            this.#provider.off("block", this.#poller);
-        }
-        pause(dropWhilePaused) {
-            this.stop();
-            if (dropWhilePaused) {
-                this.#blockNumber = -2;
-            }
-        }
-        resume() {
-            this.start();
-        }
-    }
 
     /**
      *  The available providers should suffice for most developers purposes,
@@ -18078,7 +17556,7 @@
      */
     // @TODO
     // Event coalescence
-    //   When we register an event with an async value (e.g. address is a Signer
+    //   When we register an event with an value (e.g. address is a Signer
     //   or ENS name), we need to add it immeidately for the Event API, but also
     //   need time to resolve the address. Upon resolving the address, we need to
     //   migrate the listener to the static event. We also need to maintain a map
@@ -18086,131 +17564,16 @@
     // Constants
     const BN_2$1 = BigInt(2);
     const MAX_CCIP_REDIRECTS = 10;
-    function isPromise$1(value) {
-        return (value && typeof (value.then) === "function");
-    }
-    function getTag(prefix, value) {
-        return prefix + ":" + JSON.stringify(value, (k, v) => {
-            if (v == null) {
-                return "null";
-            }
-            if (typeof (v) === "bigint") {
-                return `bigint:${v.toString()}`;
-            }
-            if (typeof (v) === "string") {
-                return v.toLowerCase();
-            }
-            // Sort object keys
-            if (typeof (v) === "object" && !Array.isArray(v)) {
-                const keys = Object.keys(v);
-                keys.sort();
-                return keys.reduce((accum, key) => {
-                    accum[key] = v[key];
-                    return accum;
-                }, {});
-            }
-            return v;
-        });
-    }
     /**
      *  An **UnmanagedSubscriber** is useful for events which do not require
      *  any additional management, such as ``"debug"`` which only requires
      *  emit in synchronous event loop triggered calls.
      */
-    class UnmanagedSubscriber {
-        /**
-         *  The name fof the event.
-         */
-        name;
-        /**
-         *  Create a new UnmanagedSubscriber with %%name%%.
-         */
-        constructor(name) { defineProperties(this, { name }); }
-        start() { }
-        stop() { }
-        pause(dropWhilePaused) { }
-        resume() { }
-    }
-    function copy$1(value) {
-        return JSON.parse(JSON.stringify(value));
-    }
     function concisify(items) {
         items = Array.from((new Set(items)).values());
         items.sort();
         return items;
     }
-    async function getSubscription(_event, provider) {
-        if (_event == null) {
-            throw new Error("invalid event");
-        }
-        // Normalize topic array info an EventFilter
-        if (Array.isArray(_event)) {
-            _event = { topics: _event };
-        }
-        if (typeof (_event) === "string") {
-            switch (_event) {
-                case "block":
-                case "debug":
-                case "error":
-                case "finalized":
-                case "network":
-                case "pending":
-                case "safe": {
-                    return { type: _event, tag: _event };
-                }
-            }
-        }
-        if (isHexString(_event, 32)) {
-            const hash = _event.toLowerCase();
-            return { type: "transaction", tag: getTag("tx", { hash }), hash };
-        }
-        if (_event.orphan) {
-            const event = _event;
-            // @TODO: Should lowercase and whatnot things here instead of copy...
-            return { type: "orphan", tag: getTag("orphan", event), filter: copy$1(event) };
-        }
-        if ((_event.address || _event.topics)) {
-            const event = _event;
-            const filter = {
-                topics: ((event.topics || []).map((t) => {
-                    if (t == null) {
-                        return null;
-                    }
-                    if (Array.isArray(t)) {
-                        return concisify(t.map((t) => t.toLowerCase()));
-                    }
-                    return t.toLowerCase();
-                }))
-            };
-            if (event.address) {
-                const addresses = [];
-                const promises = [];
-                const addAddress = (addr) => {
-                    if (isHexString(addr)) {
-                        addresses.push(addr);
-                    }
-                    else {
-                        promises.push((async () => {
-                            addresses.push(await resolveAddress(addr, provider));
-                        })());
-                    }
-                };
-                if (Array.isArray(event.address)) {
-                    event.address.forEach(addAddress);
-                }
-                else {
-                    addAddress(event.address);
-                }
-                if (promises.length) {
-                    await Promise.all(promises);
-                }
-                filter.address = concisify(addresses.map((a) => a.toLowerCase()));
-            }
-            return { filter, tag: getTag("event", filter), type: "event" };
-        }
-        assertArgument(false, "unknown ProviderEvent", "event", _event);
-    }
-    function getTime$1() { return (new Date()).getTime(); }
     const defaultOptions$1 = {
         cacheTimeout: 250,
         pollingInterval: 4000
@@ -18227,7 +17590,7 @@
         // null=unpaused, true=paused+dropWhilePaused, false=paused
         #pausedState;
         #destroyed;
-        #networkPromise;
+        #network;
         #anyNetwork;
         #performCache;
         // The most recent block number if running an event or -1 if no "block" event
@@ -18244,12 +17607,6 @@
         constructor(_network, options) {
             this.#options = Object.assign({}, defaultOptions$1, options || {});
 
-            const network = Network.from(_network);
-            assert(network, "network argument required", "INVALID_NETWORK", {});
-            this.#anyNetwork = false;
-            this.#networkPromise = Promise.resolve(network);
-            this.emit("network", network, null);
-
             this.#lastBlockNumber = -1;
             this.#performCache = new Map();
             this.#subs = new Map();
@@ -18259,6 +17616,12 @@
             this.#nextTimer = 1;
             this.#timers = new Map();
             this.#disableCcipRead = false;
+
+            const network = Network.from(_network);
+            assert(network, "network argument required", "INVALID_NETWORK", {});
+            this.#anyNetwork = false;
+            this.#network = network;
+            this.emit("network", network, null);
         }
         get pollingInterval() { return this.#options.pollingInterval; }
         /**
@@ -18271,6 +17634,9 @@
          */
         get plugins() {
             return Array.from(this.#plugins.values());
+        }
+        emit() {
+            //ignore
         }
         /**
          *  Attach a new plug-in.
@@ -18295,13 +17661,13 @@
         get disableCcipRead() { return this.#disableCcipRead; }
         set disableCcipRead(value) { this.#disableCcipRead = !!value; }
         // Shares multiple identical requests made during the same 250ms
-        async #perform(req) {
-            return await this._perform(req);
+        #perform(req) {
+            return this._perform(req);
         }
         /**
          *  Resolves to the data for executing the CCIP-read operations.
          */
-        async ccipReadFetch(tx, calldata, urls) {
+        ccipReadFetch(tx, calldata, urls) {
             if (this.disableCcipRead || urls.length === 0 || tx.to == null) {
                 return null;
             }
@@ -18314,7 +17680,7 @@
                 const href = url.replace("{sender}", sender).replace("{data}", data);
                 // If no {data} is present, use POST; otherwise GET
                 //const json: string | null = (url.indexOf("{data}") >= 0) ? null: JSON.stringify({ data, sender });
-                //const result = await fetchJson({ url: href, errorPassThrough: true }, json, (value, response) => {
+                //const result = fetchJson({ url: href, errorPassThrough: true }, json, (value, response) => {
                 //    value.status = response.statusCode;
                 //    return value;
                 //});
@@ -18324,7 +17690,7 @@
                 }
                 this.emit("debug", { action: "sendCcipReadFetchRequest", request, index: i, urls });
                 let errorMessage = "unknown error";
-                const resp = await request.send();
+                const resp = request.send();
                 try {
                     const result = resp.bodyJson;
                     if (result.data) {
@@ -18396,15 +17762,15 @@
          *
          *  Sub-classes **must** override this.
          */
-        async _perform(req) {
+        _perform(req) {
             assert(false, `unsupported method: ${req.method}`, "UNSUPPORTED_OPERATION", {
                 operation: req.method,
                 info: req
             });
         }
         // State
-        async getBlockNumber() {
-            const blockNumber = getNumber(await this.#perform({ method: "getBlockNumber" }), "%response");
+        getBlockNumber() {
+            const blockNumber = getNumber(this.#perform({ method: "getBlockNumber" }), "%response");
             if (this.#lastBlockNumber >= 0) {
                 this.#lastBlockNumber = blockNumber;
             }
@@ -18506,7 +17872,7 @@
                 }
                 return filter;
             };
-            // Addresses could be async (ENS names or Addressables)
+            // Addresses could be (ENS names or Addressables)
             let address = [];
             if (filter.address) {
                 if (Array.isArray(filter.address)) {
@@ -18542,55 +17908,37 @@
          */
         _getTransactionRequest(_request) {
             const request = copyRequest(_request);
-            const promises = [];
             ["to", "from"].forEach((key) => {
                 if (request[key] == null) {
                     return;
                 }
-                const addr = resolveAddress(request[key], this);
-                if (isPromise$1(addr)) {
-                    promises.push((async function () { request[key] = await addr; })());
-                }
-                else {
-                    request[key] = addr;
-                }
+                request[key] = resolveAddress(request[key], this);
             });
             if (request.blockTag != null) {
-                const blockTag = this._getBlockTag(request.blockTag);
-                if (isPromise$1(blockTag)) {
-                    promises.push((async function () { request.blockTag = await blockTag; })());
-                }
-                else {
-                    request.blockTag = blockTag;
-                }
-            }
-            if (promises.length) {
-                return (async function () {
-                    await Promise.all(promises);
-                    return request;
-                })();
+                request.blockTag = this._getBlockTag(request.blockTag);
+
             }
             return request;
         }
-        async getNetwork() {
-            return await this.#networkPromise;
+        getNetwork() {
+            return this.#network;
         }
-        async getFeeData() {
-            const network = await this.getNetwork();
-            const getFeeDataFunc = async () => {
-                const { _block, gasPrice, priorityFee } = await resolveProperties({
+        getFeeData() {
+            const network = this.getNetwork();
+            const getFeeDataFunc = () => {
+                const { _block, gasPrice, priorityFee } = resolveProperties({
                     _block: this.#getBlock("latest", false),
-                    gasPrice: ((async () => {
+                    gasPrice: ((() => {
                         try {
-                            const value = await this.#perform({ method: "getGasPrice" });
+                            const value = this.#perform({ method: "getGasPrice" });
                             return getBigInt(value, "%response");
                         }
                         catch (error) { }
                         return null;
                     })()),
-                    priorityFee: ((async () => {
+                    priorityFee: ((() => {
                         try {
-                            const value = await this.#perform({ method: "getPriorityFee" });
+                            const value = this.#perform({ method: "getPriorityFee" });
                             return getBigInt(value, "%response");
                         }
                         catch (error) { }
@@ -18611,21 +17959,18 @@
             const plugin = network.getPlugin("org.ethers.plugins.network.FetchUrlFeeDataPlugin");
             if (plugin) {
                 const req = new FetchRequest(plugin.url);
-                const feeData = await plugin.processFunc(getFeeDataFunc, this, req);
+                const feeData = plugin.processFunc(getFeeDataFunc, this, req);
                 return new FeeData(feeData.gasPrice, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas);
             }
-            return await getFeeDataFunc();
+            return getFeeDataFunc();
         }
-        async estimateGas(_tx) {
+        estimateGas(_tx) {
             let tx = this._getTransactionRequest(_tx);
-            if (isPromise$1(tx)) {
-                tx = await tx;
-            }
-            return getBigInt(await this.#perform({
+            return getBigInt(this.#perform({
                 method: "estimateGas", transaction: tx
             }), "%response");
         }
-        async #call(tx, blockTag, attempt) {
+        #call(tx, blockTag, attempt) {
             assert(attempt < MAX_CCIP_REDIRECTS, "CCIP read exceeded maximum redirections", "OFFCHAIN_FAULT", {
                 reason: "TOO_MANY_REDIRECTS",
                 transaction: Object.assign({}, tx, { blockTag, enableCcipRead: true })
@@ -18633,13 +17978,13 @@
             // This came in as a PerformActionTransaction, so to/from are safe; we can cast
             const transaction = copyRequest(tx);
             try {
-                return hexlify(await this._perform({ method: "call", transaction, blockTag }));
+                return hexlify(this._perform({ method: "call", transaction, blockTag }));
             }
             catch (error) {
                 // CCIP Read OffchainLookup
                 if (!this.disableCcipRead && isCallException(error) && error.data && attempt >= 0 && blockTag === "latest" && transaction.to != null && dataSlice(error.data, 0, 4) === "0x556f1830") {
                     const data = error.data;
-                    const txSender = await resolveAddress(transaction.to, this);
+                    const txSender = resolveAddress(transaction.to, this);
                     // Parse the CCIP Read Arguments
                     let ccipArgs;
                     try {
@@ -18663,7 +18008,7 @@
                             args: ccipArgs.errorArgs
                         }
                     });
-                    const ccipResult = await this.ccipReadFetch(transaction, ccipArgs.calldata, ccipArgs.urls);
+                    const ccipResult = this.ccipReadFetch(transaction, ccipArgs.calldata, ccipArgs.urls);
                     assert(ccipResult != null, "CCIP Read failed to fetch data", "OFFCHAIN_FAULT", {
                         reason: "FETCH_FAILED", transaction, info: { data: error.data, errorArgs: ccipArgs.errorArgs }
                     });
@@ -18673,7 +18018,7 @@
                     };
                     this.emit("debug", { action: "sendCcipReadCall", transaction: tx });
                     try {
-                        const result = await this.#call(tx, blockTag, attempt + 1);
+                        const result = this.#call(tx, blockTag, attempt + 1);
                         this.emit("debug", { action: "receiveCcipReadCallResult", transaction: Object.assign({}, tx), result });
                         return result;
                     }
@@ -18685,45 +18030,42 @@
                 throw error;
             }
         }
-        async #checkNetwork(promise) {
-            const { value } = await resolveProperties({
+        #checkNetwork(promise) {
+            const { value } = resolveProperties({
                 network: this.getNetwork(),
                 value: promise
             });
             return value;
         }
-        async call(_tx) {
-            const { tx, blockTag } = await resolveProperties({
+        call(_tx) {
+            const { tx, blockTag } = resolveProperties({
                 tx: this._getTransactionRequest(_tx),
                 blockTag: this._getBlockTag(_tx.blockTag)
             });
-            return await this.#checkNetwork(this.#call(tx, blockTag, _tx.enableCcipRead ? 0 : -1));
+            return this.#checkNetwork(this.#call(tx, blockTag, _tx.enableCcipRead ? 0 : -1));
         }
         // Account
-        async #getAccountValue(request, _address, _blockTag) {
+        #getAccountValue(request, _address, _blockTag) {
             let address = this._getAddress(_address);
             let blockTag = this._getBlockTag(_blockTag);
-            if (typeof (address) !== "string" || typeof (blockTag) !== "string") {
-                [address, blockTag] = await Promise.all([address, blockTag]);
-            }
-            return await this.#checkNetwork(this.#perform(Object.assign(request, { address, blockTag })));
+            return this.#checkNetwork(this.#perform(Object.assign(request, { address, blockTag })));
         }
-        async getBalance(address, blockTag) {
-            return getBigInt(await this.#getAccountValue({ method: "getBalance" }, address, blockTag), "%response");
+        getBalance(address, blockTag) {
+            return getBigInt(this.#getAccountValue({ method: "getBalance" }, address, blockTag), "%response");
         }
-        async getTransactionCount(address, blockTag) {
-            return getNumber(await this.#getAccountValue({ method: "getTransactionCount" }, address, blockTag), "%response");
+        getTransactionCount(address, blockTag) {
+            return getNumber(this.#getAccountValue({ method: "getTransactionCount" }, address, blockTag), "%response");
         }
-        async getCode(address, blockTag) {
-            return hexlify(await this.#getAccountValue({ method: "getCode" }, address, blockTag));
+        getCode(address, blockTag) {
+            return hexlify(this.#getAccountValue({ method: "getCode" }, address, blockTag));
         }
-        async getStorage(address, _position, blockTag) {
+        getStorage(address, _position, blockTag) {
             const position = getBigInt(_position, "position");
-            return hexlify(await this.#getAccountValue({ method: "getStorage", position }, address, blockTag));
+            return hexlify(this.#getAccountValue({ method: "getStorage", position }, address, blockTag));
         }
         // Write
-        async broadcastTransaction(signedTx) {
-            const { blockNumber, hash, network } = await resolveProperties({
+        broadcastTransaction(signedTx) {
+            const { blockNumber, hash, network } = resolveProperties({
                 blockNumber: this.getBlockNumber(),
                 hash: this._perform({
                     method: "broadcastTransaction",
@@ -18737,24 +18079,24 @@
             }
             return this._wrapTransactionResponse(tx, network).replaceableTransaction(blockNumber);
         }
-        async #getBlock(block, includeTransactions) {
+        #getBlock(block, includeTransactions) {
             // @TODO: Add CustomBlockPlugin check
             if (isHexString(block, 32)) {
-                return await this.#perform({
+                return this.#perform({
                     method: "getBlock", blockHash: block, includeTransactions
                 });
             }
             let blockTag = this._getBlockTag(block);
             if (typeof (blockTag) !== "string") {
-                blockTag = await blockTag;
+                blockTag = blockTag;
             }
-            return await this.#perform({
+            return this.#perform({
                 method: "getBlock", blockTag, includeTransactions
             });
         }
         // Queries
-        async getBlock(block, prefetchTxs) {
-            const { network, params } = await resolveProperties({
+        getBlock(block, prefetchTxs) {
+            const { network, params } = resolveProperties({
                 network: this.getNetwork(),
                 params: this.#getBlock(block, !!prefetchTxs)
             });
@@ -18763,8 +18105,8 @@
             }
             return this._wrapBlock(params, network);
         }
-        async getTransaction(hash) {
-            const { network, params } = await resolveProperties({
+        getTransaction(hash) {
+            const { network, params } = resolveProperties({
                 network: this.getNetwork(),
                 params: this.#perform({ method: "getTransaction", hash })
             });
@@ -18773,8 +18115,8 @@
             }
             return this._wrapTransactionResponse(params, network);
         }
-        async getTransactionReceipt(hash) {
-            const { network, params } = await resolveProperties({
+        getTransactionReceipt(hash) {
+            const { network, params } = resolveProperties({
                 // network: this.getNetwork(),
                 params: this.#perform({ method: "getTransactionReceipt", hash })
             });
@@ -18784,7 +18126,7 @@
             // Some backends did not backfill the effectiveGasPrice into old transactions
             // in the receipt, so we look it up manually and inject it.
             if (params.gasPrice == null && params.effectiveGasPrice == null) {
-                const tx = await this.#perform({ method: "getTransaction", hash });
+                const tx = this.#perform({ method: "getTransaction", hash });
                 if (tx == null) {
                     throw new Error("report this; could not find tx or effectiveGasPrice");
                 }
@@ -18792,8 +18134,8 @@
             }
             return this._wrapTransactionReceipt(params, network);
         }
-        async getTransactionResult(hash) {
-            const { result } = await resolveProperties({
+        getTransactionResult(hash) {
+            const { result } = resolveProperties({
                 network: this.getNetwork(),
                 result: this.#perform({ method: "getTransactionResult", hash })
             });
@@ -18803,12 +18145,9 @@
             return hexlify(result);
         }
         // Bloom-filter Queries
-        async getLogs(_filter) {
+        getLogs(_filter) {
             let filter = this._getFilter(_filter);
-            if (isPromise$1(filter)) {
-                filter = await filter;
-            }
-            const { network, params } = await resolveProperties({
+            const { network, params } = resolveProperties({
                 network: this.getNetwork(),
                 params: this.#perform({ method: "getLogs", filter })
             });
@@ -18820,41 +18159,41 @@
                 operation: "_getProvider()"
             });
         }
-        async getResolver(name) {
-            return await EnsResolver.fromName(this, name);
+        getResolver(name) {
+            return EnsResolver.fromName(this, name);
         }
-        async getAvatar(name) {
-            const resolver = await this.getResolver(name);
+        getAvatar(name) {
+            const resolver = this.getResolver(name);
             if (resolver) {
-                return await resolver.getAvatar();
+                return resolver.getAvatar();
             }
             return null;
         }
-        async resolveName(name) {
-            const resolver = await this.getResolver(name);
+        resolveName(name) {
+            const resolver = this.getResolver(name);
             if (resolver) {
-                return await resolver.getAddress();
+                return resolver.getAddress();
             }
             return null;
         }
-        async lookupAddress(address) {
+        lookupAddress(address) {
             address = getAddress(address);
             const node = namehash(address.substring(2).toLowerCase() + ".addr.reverse");
             try {
-                const ensAddr = await EnsResolver.getEnsAddress(this);
+                const ensAddr = EnsResolver.getEnsAddress(this);
                 const ensContract = new Contract(ensAddr, [
                     "function resolver(bytes32) view returns (address)"
                 ], this);
-                const resolver = await ensContract.resolver(node);
+                const resolver = ensContract.resolver(node);
                 if (resolver == null || resolver === ZeroAddress) {
                     return null;
                 }
                 const resolverContract = new Contract(resolver, [
                     "function name(bytes32) view returns (string)"
                 ], this);
-                const name = await resolverContract.name(node);
+                const name = resolverContract.name(node);
                 // Failed forward resolution
-                const check = await this.resolveName(name);
+                const check = this.resolveName(name);
                 if (check !== address) {
                     return null;
                 }
@@ -18873,7 +18212,7 @@
             }
             return null;
         }
-        async waitForTransaction(hash, _confirms, interval, timeout) {
+        waitForTransaction(hash, _confirms, interval, timeout) {
             const confirms = (_confirms != null) ? _confirms : 1;
             if (confirms === 0) {
                 return this.getTransactionReceipt(hash);
@@ -18882,9 +18221,9 @@
             let nowTs = Date.now();
             while(Date.now() - nowTs < timeout) {
                 Thread.sleep(interval);
-                const receipt = await this.getTransactionReceipt(hash);
+                const receipt = this.getTransactionReceipt(hash);
                 if (receipt != null) {
-                    let blockNumber = await this.getBlockNumber();
+                    let blockNumber = this.getBlockNumber();
                     if (blockNumber - receipt.blockNumber + 1 >= confirms) {
                         return receipt;
                     }
@@ -18893,323 +18232,13 @@
 
             throw makeError("waitForTransaction timeout", "TIMEOUT", {operation: "waitForTransaction", hash: hash});
         }
-        async waitForBlock(blockTag) {
+        waitForBlock(blockTag) {
             assert(false, "not implemented yet", "NOT_IMPLEMENTED", {
                 operation: "waitForBlock"
             });
         }
-        /**
-         *  Clear a timer created using the [[_setTimeout]] method.
-         */
-        _clearTimeout(timerId) {
-        }
-        /**
-         *  Create a timer that will execute %%func%% after at least %%timeout%%
-         *  (in ms). If %%timeout%% is unspecified, then %%func%% will execute
-         *  in the next event loop.
-         *
-         *  [Pausing](AbstractProvider-paused) the provider will pause any
-         *  associated timers.
-         */
-        _setTimeout(_func, timeout) {
-            if (timeout == null) {
-                timeout = 0;
-            }
-            return setTimeout(_func, timeout);
-        }
-        /**
-         *  Perform %%func%% on each subscriber.
-         */
-        _forEachSubscriber(func) {
-            for (const sub of this.#subs.values()) {
-                func(sub.subscriber);
-            }
-        }
-        /**
-         *  Sub-classes may override this to customize subscription
-         *  implementations.
-         */
-        _getSubscriber(sub) {
-            switch (sub.type) {
-                case "debug":
-                case "error":
-                case "network":
-                    return new UnmanagedSubscriber(sub.type);
-                case "block": {
-                    const subscriber = new PollingBlockSubscriber(this);
-                    subscriber.pollingInterval = this.pollingInterval;
-                    return subscriber;
-                }
-                case "safe":
-                case "finalized":
-                    return new PollingBlockTagSubscriber(this, sub.type);
-                case "event":
-                    return new PollingEventSubscriber(this, sub.filter);
-                case "transaction":
-                    return new PollingTransactionSubscriber(this, sub.hash);
-                case "orphan":
-                    return new PollingOrphanSubscriber(this, sub.filter);
-            }
-            throw new Error(`unsupported event: ${sub.type}`);
-        }
-        /**
-         *  If a [[Subscriber]] fails and needs to replace itself, this
-         *  method may be used.
-         *
-         *  For example, this is used for providers when using the
-         *  ``eth_getFilterChanges`` method, which can return null if state
-         *  filters are not supported by the backend, allowing the Subscriber
-         *  to swap in a [[PollingEventSubscriber]].
-         */
-        _recoverSubscriber(oldSub, newSub) {
-            for (const sub of this.#subs.values()) {
-                if (sub.subscriber === oldSub) {
-                    if (sub.started) {
-                        sub.subscriber.stop();
-                    }
-                    sub.subscriber = newSub;
-                    if (sub.started) {
-                        newSub.start();
-                    }
-                    if (this.#pausedState != null) {
-                        newSub.pause(this.#pausedState);
-                    }
-                    break;
-                }
-            }
-        }
-        async #hasSub(event, emitArgs) {
-            let sub = await getSubscription(event, this);
-            // This is a log that is removing an existing log; we actually want
-            // to emit an orphan event for the removed log
-            if (sub.type === "event" && emitArgs && emitArgs.length > 0 && emitArgs[0].removed === true) {
-                sub = await getSubscription({ orphan: "drop-log", log: emitArgs[0] }, this);
-            }
-            return this.#subs.get(sub.tag) || null;
-        }
-        async #getSub(event) {
-            const subscription = await getSubscription(event, this);
-            // Prevent tampering with our tag in any subclass' _getSubscriber
-            const tag = subscription.tag;
-            let sub = this.#subs.get(tag);
-            if (!sub) {
-                const subscriber = this._getSubscriber(subscription);
-                const addressableMap = new WeakMap();
-                const nameMap = new Map();
-                sub = { subscriber, tag, addressableMap, nameMap, started: false, listeners: [] };
-                this.#subs.set(tag, sub);
-            }
-            return sub;
-        }
-        async on(event, listener) {
-            const sub = await this.#getSub(event);
-            sub.listeners.push({ listener, once: false });
-            if (!sub.started) {
-                sub.subscriber.start();
-                sub.started = true;
-                if (this.#pausedState != null) {
-                    sub.subscriber.pause(this.#pausedState);
-                }
-            }
-            return this;
-        }
-        async once(event, listener) {
-            const sub = await this.#getSub(event);
-            sub.listeners.push({ listener, once: true });
-            if (!sub.started) {
-                sub.subscriber.start();
-                sub.started = true;
-                if (this.#pausedState != null) {
-                    sub.subscriber.pause(this.#pausedState);
-                }
-            }
-            return this;
-        }
-        async emit(event, ...args) {
-            const sub = await this.#hasSub(event, args);
-            // If there is not subscription or if a recent emit removed
-            // the last of them (which also deleted the sub) do nothing
-            if (!sub || sub.listeners.length === 0) {
-                return false;
-            }
-            const count = sub.listeners.length;
-            sub.listeners = sub.listeners.filter(({ listener, once }) => {
-                const payload = new EventPayload(this, (once ? null : listener), event);
-                try {
-                    listener.call(this, ...args, payload);
-                }
-                catch (error) { }
-                return !once;
-            });
-            if (sub.listeners.length === 0) {
-                if (sub.started) {
-                    sub.subscriber.stop();
-                }
-                this.#subs.delete(sub.tag);
-            }
-            return (count > 0);
-        }
-        async listenerCount(event) {
-            if (event) {
-                const sub = await this.#hasSub(event);
-                if (!sub) {
-                    return 0;
-                }
-                return sub.listeners.length;
-            }
-            let total = 0;
-            for (const { listeners } of this.#subs.values()) {
-                total += listeners.length;
-            }
-            return total;
-        }
-        async listeners(event) {
-            if (event) {
-                const sub = await this.#hasSub(event);
-                if (!sub) {
-                    return [];
-                }
-                return sub.listeners.map(({ listener }) => listener);
-            }
-            let result = [];
-            for (const { listeners } of this.#subs.values()) {
-                result = result.concat(listeners.map(({ listener }) => listener));
-            }
-            return result;
-        }
-        async off(event, listener) {
-            const sub = await this.#hasSub(event);
-            if (!sub) {
-                return this;
-            }
-            if (listener) {
-                const index = sub.listeners.map(({ listener }) => listener).indexOf(listener);
-                if (index >= 0) {
-                    sub.listeners.splice(index, 1);
-                }
-            }
-            if (!listener || sub.listeners.length === 0) {
-                if (sub.started) {
-                    sub.subscriber.stop();
-                }
-                this.#subs.delete(sub.tag);
-            }
-            return this;
-        }
-        async removeAllListeners(event) {
-            if (event) {
-                const { tag, started, subscriber } = await this.#getSub(event);
-                if (started) {
-                    subscriber.stop();
-                }
-                this.#subs.delete(tag);
-            }
-            else {
-                for (const [tag, { started, subscriber }] of this.#subs) {
-                    if (started) {
-                        subscriber.stop();
-                    }
-                    this.#subs.delete(tag);
-                }
-            }
-            return this;
-        }
-        // Alias for "on"
-        async addListener(event, listener) {
-            return await this.on(event, listener);
-        }
-        // Alias for "off"
-        async removeListener(event, listener) {
-            return this.off(event, listener);
-        }
-        /**
-         *  If this provider has been destroyed using the [[destroy]] method.
-         *
-         *  Once destroyed, all resources are reclaimed, internal event loops
-         *  and timers are cleaned up and no further requests may be sent to
-         *  the provider.
-         */
-        get destroyed() {
-            return this.#destroyed;
-        }
-        /**
-         *  Sub-classes may use this to shutdown any sockets or release their
-         *  resources and reject any pending requests.
-         *
-         *  Sub-classes **must** call ``super.destroy()``.
-         */
-        destroy() {
-            // Stop all listeners
-            this.removeAllListeners();
-            // Shut down all tiemrs
-            for (const timerId of this.#timers.keys()) {
-                this._clearTimeout(timerId);
-            }
-            this.#destroyed = true;
-        }
-        /**
-         *  Whether the provider is currently paused.
-         *
-         *  A paused provider will not emit any events, and generally should
-         *  not make any requests to the network, but that is up to sub-classes
-         *  to manage.
-         *
-         *  Setting ``paused = true`` is identical to calling ``.pause(false)``,
-         *  which will buffer any events that occur while paused until the
-         *  provider is unpaused.
-         */
-        get paused() { return (this.#pausedState != null); }
-        set paused(pause) {
-            if (!!pause === this.paused) {
-                return;
-            }
-            if (this.paused) {
-                this.resume();
-            }
-            else {
-                this.pause(false);
-            }
-        }
-        /**
-         *  Pause the provider. If %%dropWhilePaused%%, any events that occur
-         *  while paused are dropped, otherwise all events will be emitted once
-         *  the provider is unpaused.
-         */
-        pause(dropWhilePaused) {
-            this.#lastBlockNumber = -1;
-            if (this.#pausedState != null) {
-                if (this.#pausedState == !!dropWhilePaused) {
-                    return;
-                }
-                assert(false, "cannot change pause type; resume first", "UNSUPPORTED_OPERATION", {
-                    operation: "pause"
-                });
-            }
-            this._forEachSubscriber((s) => s.pause(dropWhilePaused));
-            this.#pausedState = !!dropWhilePaused;
-        }
-        /**
-         *  Resume the provider.
-         */
-        resume() {
-            if (this.#pausedState == null) {
-                return;
-            }
-            this._forEachSubscriber((s) => s.resume());
-            this.#pausedState = null;
-            for (const timer of this.#timers.values()) {
-                // Remaining time when we were paused
-                let timeout = timer.time;
-                if (timeout < 0) {
-                    timeout = 0;
-                }
-                // Start time (in cause paused, so we con compute remaininf time)
-                timer.time = getTime$1();
-                // Start the timer
-                setTimeout(timer.func, timeout);
-            }
-        }
     }
+
     function _parseString(result, start) {
         try {
             const bytes = _parseBytes(result, start);
@@ -19351,7 +18380,7 @@
         }
         assert(false, "missing provider", "UNSUPPORTED_OPERATION", { operation });
     }
-    async function populate(signer, tx) {
+    function populate(signer, tx) {
         let pop = copyRequest(tx);
         if (pop.to != null) {
             pop.to = resolveAddress(pop.to, signer);
@@ -19369,7 +18398,7 @@
         else {
             pop.from = signer.getAddress();
         }
-        return await resolveProperties(pop);
+        return resolveProperties(pop);
     }
     /**
      *  An **AbstractSigner** includes most of teh functionality required
@@ -19388,24 +18417,24 @@
         constructor(provider) {
             defineProperties(this, { provider: (provider || null) });
         }
-        async getNonce(blockTag) {
-            return checkProvider(this, "getTransactionCount").getTransactionCount(await this.getAddress(), blockTag);
+        getNonce(blockTag) {
+            return checkProvider(this, "getTransactionCount").getTransactionCount(this.getAddress(), blockTag);
         }
-        async populateCall(tx) {
-            const pop = await populate(this, tx);
+        populateCall(tx) {
+            const pop = populate(this, tx);
             return pop;
         }
-        async populateTransaction(tx) {
+        populateTransaction(tx) {
             const provider = checkProvider(this, "populateTransaction");
-            const pop = await populate(this, tx);
+            const pop = populate(this, tx);
             if (pop.nonce == null) {
-                pop.nonce = await this.getNonce("pending");
+                pop.nonce = this.getNonce("pending");
             }
             if (pop.gasLimit == null) {
-                pop.gasLimit = await this.estimateGas(pop);
+                pop.gasLimit = this.estimateGas(pop);
             }
             // Populate the chain ID
-            const network = await (this.provider).getNetwork();
+            const network = (this.provider).getNetwork();
             if (pop.chainId != null) {
                 const chainId = getBigInt(pop.chainId);
                 assertArgument(chainId === network.chainId, "transaction chainId mismatch", "tx.chainId", tx.chainId);
@@ -19428,7 +18457,7 @@
             else if (pop.type === 0 || pop.type === 1) {
                 // Explicit Legacy or EIP-2930 transaction
                 // We need to get fee data to determine things
-                const feeData = await provider.getFeeData();
+                const feeData = provider.getFeeData();
                 assert(feeData.gasPrice != null, "network does not support gasPrice", "UNSUPPORTED_OPERATION", {
                     operation: "getGasPrice"
                 });
@@ -19439,7 +18468,7 @@
             }
             else {
                 // We need to get fee data to determine things
-                const feeData = await provider.getFeeData();
+                const feeData = provider.getFeeData();
                 if (pop.type == null) {
                     // We need to auto-detect the intended type of this transaction...
                     if (feeData.maxFeePerGas != null && feeData.maxPriorityFeePerGas != null) {
@@ -19496,26 +18525,26 @@
                     }
                 }
             }
-            //@TOOD: Don't await all over the place; save them up for
+            //@TOOD: Don't all over the place; save them up for
             // the end for better batching
-            return await resolveProperties(pop);
+            return resolveProperties(pop);
         }
-        async estimateGas(tx) {
-            return checkProvider(this, "estimateGas").estimateGas(await this.populateCall(tx));
+        estimateGas(tx) {
+            return checkProvider(this, "estimateGas").estimateGas(this.populateCall(tx));
         }
-        async call(tx) {
-            return checkProvider(this, "call").call(await this.populateCall(tx));
+        call(tx) {
+            return checkProvider(this, "call").call(this.populateCall(tx));
         }
-        async resolveName(name) {
+        resolveName(name) {
             const provider = checkProvider(this, "resolveName");
-            return await provider.resolveName(name);
+            return provider.resolveName(name);
         }
-        async sendTransaction(tx) {
+        sendTransaction(tx) {
             const provider = checkProvider(this, "sendTransaction");
-            const pop = await this.populateTransaction(tx);
+            const pop = this.populateTransaction(tx);
             delete pop.from;
             const txObj = Transaction.from(pop);
-            return await provider.broadcastTransaction(await this.signTransaction(txObj));
+            return provider.broadcastTransaction(this.signTransaction(txObj));
         }
     }
     /**
@@ -19539,20 +18568,20 @@
             super(provider);
             defineProperties(this, { address });
         }
-        async getAddress() { return this.address; }
+        getAddress() { return this.address; }
         connect(provider) {
             return new VoidSigner(this.address, provider);
         }
         #throwUnsupported(suffix, operation) {
             assert(false, `VoidSigner cannot sign ${suffix}`, "UNSUPPORTED_OPERATION", { operation });
         }
-        async signTransaction(tx) {
+        signTransaction(tx) {
             this.#throwUnsupported("transactions", "signTransaction");
         }
-        async signMessage(message) {
+        signMessage(message) {
             this.#throwUnsupported("messages", "signMessage");
         }
-        async signTypedData(domain, types, value) {
+        signTypedData(domain, types, value) {
             this.#throwUnsupported("typed-data", "signTypedData");
         }
     }
@@ -19595,174 +18624,6 @@
 
     function copy(obj) {
         return JSON.parse(JSON.stringify(obj));
-    }
-    /**
-     *  Some backends support subscribing to events using a Filter ID.
-     *
-     *  When subscribing with this technique, the node issues a unique
-     *  //Filter ID//. At this point the node dedicates resources to
-     *  the filter, so that periodic calls to follow up on the //Filter ID//
-     *  will receive any events since the last call.
-     *
-     *  @_docloc: api/providers/abstract-provider
-     */
-    class FilterIdSubscriber {
-        #provider;
-        #filterIdPromise;
-        #poller;
-        #running;
-        #network;
-        #hault;
-        /**
-         *  Creates a new **FilterIdSubscriber** which will used [[_subscribe]]
-         *  and [[_emitResults]] to setup the subscription and provide the event
-         *  to the %%provider%%.
-         */
-        constructor(provider) {
-            this.#provider = provider;
-            this.#filterIdPromise = null;
-            this.#poller = this.#poll.bind(this);
-            this.#running = false;
-            this.#network = null;
-            this.#hault = false;
-        }
-        /**
-         *  Sub-classes **must** override this to begin the subscription.
-         */
-        _subscribe(provider) {
-            throw new Error("subclasses must override this");
-        }
-        /**
-         *  Sub-classes **must** override this handle the events.
-         */
-        _emitResults(provider, result) {
-            throw new Error("subclasses must override this");
-        }
-        /**
-         *  Sub-classes **must** override this handle recovery on errors.
-         */
-        _recover(provider) {
-            throw new Error("subclasses must override this");
-        }
-        async #poll(blockNumber) {
-            try {
-                // Subscribe if necessary
-                if (this.#filterIdPromise == null) {
-                    this.#filterIdPromise = this._subscribe(this.#provider);
-                }
-                // Get the Filter ID
-                let filterId = null;
-                try {
-                    filterId = await this.#filterIdPromise;
-                }
-                catch (error) {
-                    if (!isError(error, "UNSUPPORTED_OPERATION") || error.operation !== "eth_newFilter") {
-                        throw error;
-                    }
-                }
-                // The backend does not support Filter ID; downgrade to
-                // polling
-                if (filterId == null) {
-                    this.#filterIdPromise = null;
-                    this.#provider._recoverSubscriber(this, this._recover(this.#provider));
-                    return;
-                }
-                const network = await this.#provider.getNetwork();
-                if (!this.#network) {
-                    this.#network = network;
-                }
-                if (this.#network.chainId !== network.chainId) {
-                    throw new Error("chaid changed");
-                }
-                if (this.#hault) {
-                    return;
-                }
-                const result = await this.#provider.send("eth_getFilterChanges", [filterId]);
-                await this._emitResults(this.#provider, result);
-            }
-            catch (error) {
-                console.log("@TODO", error);
-            }
-            this.#provider.once("block", this.#poller);
-        }
-        #teardown() {
-            const filterIdPromise = this.#filterIdPromise;
-            if (filterIdPromise) {
-                this.#filterIdPromise = null;
-                filterIdPromise.then((filterId) => {
-                    if (this.#provider.destroyed) {
-                        return;
-                    }
-                    this.#provider.send("eth_uninstallFilter", [filterId]);
-                });
-            }
-        }
-        start() {
-            if (this.#running) {
-                return;
-            }
-            this.#running = true;
-            this.#poll(-2);
-        }
-        stop() {
-            if (!this.#running) {
-                return;
-            }
-            this.#running = false;
-            this.#hault = true;
-            this.#teardown();
-            this.#provider.off("block", this.#poller);
-        }
-        pause(dropWhilePaused) {
-            if (dropWhilePaused) {
-                this.#teardown();
-            }
-            this.#provider.off("block", this.#poller);
-        }
-        resume() { this.start(); }
-    }
-    /**
-     *  A **FilterIdSubscriber** for receiving contract events.
-     *
-     *  @_docloc: api/providers/abstract-provider
-     */
-    class FilterIdEventSubscriber extends FilterIdSubscriber {
-        #event;
-        /**
-         *  Creates a new **FilterIdEventSubscriber** attached to %%provider%%
-         *  listening for %%filter%%.
-         */
-        constructor(provider, filter) {
-            super(provider);
-            this.#event = copy(filter);
-        }
-        _recover(provider) {
-            return new PollingEventSubscriber(provider, this.#event);
-        }
-        async _subscribe(provider) {
-            const filterId = await provider.send("eth_newFilter", [this.#event]);
-            return filterId;
-        }
-        async _emitResults(provider, results) {
-            for (const result of results) {
-                provider.emit(this.#event, provider._wrapLog(result, provider._network));
-            }
-        }
-    }
-    /**
-     *  A **FilterIdSubscriber** for receiving pending transactions events.
-     *
-     *  @_docloc: api/providers/abstract-provider
-     */
-    class FilterIdPendingSubscriber extends FilterIdSubscriber {
-        async _subscribe(provider) {
-            return await provider.send("eth_newPendingTransactionFilter", []);
-        }
-        async _emitResults(provider, results) {
-            for (const result of results) {
-                provider.emit("pending", result);
-            }
-        }
     }
 
     /**
@@ -19831,26 +18692,23 @@
                 operation: "signer.connect"
             });
         }
-        async getAddress() {
+        getAddress() {
             return this.address;
         }
         // JSON-RPC will automatially fill in nonce, etc. so we just check from
-        async populateTransaction(tx) {
-            return await this.populateCall(tx);
+        populateTransaction(tx) {
+            return this.populateCall(tx);
         }
         // Returns just the hash of the transaction after sent, which is what
         // the bare JSON-RPC API does;
-        async sendUncheckedTransaction(_tx) {
+        sendUncheckedTransaction(_tx) {
             const tx = deepCopy(_tx);
-            const promises = [];
             // Make sure the from matches the sender
             if (tx.from) {
                 const _from = tx.from;
-                promises.push((async () => {
-                    const from = await resolveAddress(_from, this.provider);
-                    assertArgument(from != null && from.toLowerCase() === this.address.toLowerCase(), "from address mismatch", "transaction", _tx);
-                    tx.from = from;
-                })());
+                const from = resolveAddress(_from, this.provider);
+                assertArgument(from != null && from.toLowerCase() === this.address.toLowerCase(), "from address mismatch", "transaction", _tx);
+                tx.from = from;
             }
             else {
                 tx.from = this.address;
@@ -19859,85 +18717,69 @@
             // wishes to use this, it is easy to specify explicitly, otherwise
             // we look it up for them.
             if (tx.gasLimit == null) {
-                promises.push((async () => {
-                    tx.gasLimit = await this.provider.estimateGas({ ...tx, from: this.address });
-                })());
+                tx.gasLimit = this.provider.estimateGas({ ...tx, from: this.address });
             }
             // The address may be an ENS name or Addressable
             if (tx.to != null) {
                 const _to = tx.to;
-                promises.push((async () => {
-                    tx.to = await resolveAddress(_to, this.provider);
-                })());
-            }
-            // Wait until all of our properties are filled in
-            if (promises.length) {
-                await Promise.all(promises);
+                tx.to = resolveAddress(_to, this.provider);
             }
             const hexTx = this.provider.getRpcTransaction(tx);
             return this.provider.send("eth_sendTransaction", [hexTx]);
         }
-        async sendTransaction(tx) {
+        sendTransaction(tx) {
             // This cannot be mined any earlier than any recent block
-            const blockNumber = await this.provider.getBlockNumber();
+            const blockNumber = this.provider.getBlockNumber();
             // Send the transaction
-            const hash = await this.sendUncheckedTransaction(tx);
+            const hash = this.sendUncheckedTransaction(tx);
             // Unfortunately, JSON-RPC only provides and opaque transaction hash
             // for a response, and we need the actual transaction, so we poll
             // for it; it should show up very quickly
-            return await (new Promise((resolve, reject) => {
-                const timeouts = [1000, 100];
-                let invalids = 0;
-                const checkTx = async () => {
-                    try {
-                        // Try getting the transaction
-                        const tx = await this.provider.getTransaction(hash);
-                        if (tx != null) {
-                            resolve(tx.replaceableTransaction(blockNumber));
-                            return;
+            let invalids = 0;
+            while (true) {
+                try {
+                    const tx = this.provider.getTransaction(hash);
+                    if (tx != null) {
+                        return (tx.replaceableTransaction(blockNumber));
+                    }
+                }
+                catch (error) {
+                    // If we were cancelled: stop polling.
+                    // If the data is bad: the node returns bad transactions
+                    // If the network changed: calling again will also fail
+                    // If unsupported: likely destroyed
+                    if (isError(error, "CANCELLED") || isError(error, "BAD_DATA") ||
+                        isError(error, "NETWORK_ERROR" )) {
+                        if (error.info == null) {
+                            error.info = {};
+                        }
+                        error.info.sendTransactionHash = hash;
+                        throw error;
+                    }
+
+                    // Stop-gap for misbehaving backends; see #4513
+                    if (isError(error, "INVALID_ARGUMENT")) {
+                        invalids++;
+                        if (error.info == null) {
+                            error.info = {};
+                        }
+                        error.info.sendTransactionHash = hash;
+                        if (invalids > 10) {
+                            throw error;
                         }
                     }
-                    catch (error) {
-                        // If we were cancelled: stop polling.
-                        // If the data is bad: the node returns bad transactions
-                        // If the network changed: calling again will also fail
-                        // If unsupported: likely destroyed
-                        if (isError(error, "CANCELLED") || isError(error, "BAD_DATA") ||
-                            isError(error, "NETWORK_ERROR" )) {
-                            if (error.info == null) {
-                                error.info = {};
-                            }
-                            error.info.sendTransactionHash = hash;
-                            reject(error);
-                            return;
-                        }
-                        // Stop-gap for misbehaving backends; see #4513
-                        if (isError(error, "INVALID_ARGUMENT")) {
-                            invalids++;
-                            if (error.info == null) {
-                                error.info = {};
-                            }
-                            error.info.sendTransactionHash = hash;
-                            if (invalids > 10) {
-                                reject(error);
-                                return;
-                            }
-                        }
-                        // Notify anyone that cares; but we will try again, since
-                        // it is likely an intermittent service error
-                        this.provider.emit("error", makeError("failed to fetch transation after sending (will try again)", "UNKNOWN_ERROR", { error }));
-                    }
-                    // Wait another 4 seconds
-                    this.provider._setTimeout(() => { checkTx(); }, timeouts.pop() || 4000);
-                };
-                checkTx();
-            }));
+                }
+                finally {
+                    Thread.sleep(4000);
+                }
+
+            }
         }
-        async signTransaction(_tx) {
+        signTransaction(_tx) {
             const tx = deepCopy(_tx);
             // Make sure the from matches the sender
             if (tx.from) {
-                const from = await resolveAddress(tx.from, this.provider);
+                const from = resolveAddress(tx.from, this.provider);
                 assertArgument(from != null && from.toLowerCase() === this.address.toLowerCase(), "from address mismatch", "transaction", _tx);
                 tx.from = from;
             }
@@ -19945,36 +18787,36 @@
                 tx.from = this.address;
             }
             const hexTx = this.provider.getRpcTransaction(tx);
-            return await this.provider.send("eth_signTransaction", [hexTx]);
+            return this.provider.send("eth_signTransaction", [hexTx]);
         }
-        async signMessage(_message) {
+        signMessage(_message) {
             const message = ((typeof (_message) === "string") ? toUtf8Bytes(_message) : _message);
-            return await this.provider.send("personal_sign", [
+            return this.provider.send("personal_sign", [
                 hexlify(message), this.address.toLowerCase()
             ]);
         }
-        async signTypedData(domain, types, _value) {
+        signTypedData(domain, types, _value) {
             const value = deepCopy(_value);
             // Populate any ENS names (in-place)
-            const populated = await TypedDataEncoder.resolveNames(domain, types, value, async (value) => {
-                const address = await resolveAddress(value);
+            const populated = TypedDataEncoder.resolveNames(domain, types, value, (value) => {
+                const address = resolveAddress(value);
                 assertArgument(address != null, "TypedData does not support null address", "value", value);
                 return address;
             });
-            return await this.provider.send("eth_signTypedData_v4", [
+            return this.provider.send("eth_signTypedData_v4", [
                 this.address.toLowerCase(),
                 JSON.stringify(TypedDataEncoder.getPayload(populated.domain, types, populated.value))
             ]);
         }
-        async unlock(password) {
+        unlock(password) {
             return this.provider.send("personal_unlockAccount", [
                 this.address.toLowerCase(), password, null
             ]);
         }
         // https://github.com/ethereum/wiki/wiki/JSON-RPC#eth_sign
-        async _legacySignMessage(_message) {
+        _legacySignMessage(_message) {
             const message = ((typeof (_message) === "string") ? toUtf8Bytes(_message) : _message);
-            return await this.provider.send("eth_sign", [
+            return this.provider.send("eth_sign", [
                 this.address.toLowerCase(), hexlify(message)
             ]);
         }
@@ -19993,16 +18835,14 @@
         #options;
         // The next ID to use for the JSON-RPC ID field
         #nextId;
-        // Payloads are queued and triggered in batches using the drainTimer
         #payloads;
-        #drainTimer;
         #notReady;
         #network;
         #pendingDetectNetwork;
-        async #scheduleDrain(payload) {
+        #scheduleDrain(payload) {
             this.emit("debug", { action: "sendRpcPayload", payload });
             try {
-                const result = await this._send(payload);
+                const result = this._send(payload);
                 this.emit("debug", { action: "receiveRpcResult", result });
                 // Process results in batch order
                 if (this.destroyed) {
@@ -20023,7 +18863,7 @@
                     throw this.getRpcError(payload, resp);
                 }
                 // All good; send the result
-                return (resp.result);
+                return resp.result;
             }
             catch (error) {
                 this.emit("debug", { action: "receiveRpcError", error });
@@ -20032,33 +18872,12 @@
         }
         constructor(network, options) {
             options = options || {};
-            options.staticNetwork = true;
+            options.staticNetwork = true; //alway use static network
+
             super(network, options);
             this.#nextId = 1;
             this.#options = Object.assign({}, defaultOptions, options || {});
             this.#payloads = [];
-            this.#drainTimer = null;
-            this.#network = null;
-            this.#pendingDetectNetwork = null;
-            {
-                let resolve = null;
-                const promise = new Promise((_resolve) => {
-                    resolve = _resolve;
-                });
-                this.#notReady = { promise, resolve };
-            }
-            const staticNetwork = this._getOption("staticNetwork");
-            if (typeof (staticNetwork) === "boolean") {
-                assertArgument(!staticNetwork || network !== "any", "staticNetwork cannot be used on special network 'any'", "options", options);
-                if (staticNetwork && network != null) {
-                    this.#network = Network.from(network);
-                }
-            }
-            else if (staticNetwork) {
-                // Make sure any static network is compatbile with the provided netwrok
-                assertArgument(network == null || staticNetwork.matches(network), "staticNetwork MUST match network object", "options", options);
-                this.#network = staticNetwork;
-            }
         }
         /**
          *  Returns the value associated with the option %%key%%.
@@ -20082,7 +18901,7 @@
          *  Sub-classes may override this to modify behavior of actions,
          *  and should generally call ``super._perform`` as a fallback.
          */
-        async _perform(req) {
+        _perform(req) {
             // Legacy networks do not like the type field being passed along (which
             // is fair), so we delete type if it is 0 and a non-EIP-1559 network
             if (req.method === "call" || req.method === "estimateGas") {
@@ -20090,7 +18909,7 @@
                 if (tx && tx.type != null && getBigInt(tx.type)) {
                     // If there are no EIP-1559 or newer properties, it might be pre-EIP-1559
                     if (tx.maxFeePerGas == null && tx.maxPriorityFeePerGas == null) {
-                        const feeData = await this.getFeeData();
+                        const feeData = this.getFeeData();
                         if (feeData.maxFeePerGas == null && feeData.maxPriorityFeePerGas == null) {
                             // Network doesn't know about EIP-1559 (and hence type)
                             req = Object.assign({}, req, {
@@ -20102,7 +18921,7 @@
             }
             const request = this.getRpcRequest(req);
             if (request != null) {
-                return await this.send(request.method, request.args);
+                return this.send(request.method, request.args);
             }
             return super._perform(req);
         }
@@ -20113,7 +18932,7 @@
          *  Keep in mind that [[send]] may only be used once [[ready]], otherwise the
          *  _send primitive must be used instead.
          */
-        async _detectNetwork() {
+        _detectNetwork() {
             const network = this._getOption("staticNetwork");
             if (network) {
                 if (network === true) {
@@ -20126,13 +18945,13 @@
                 }
             }
             if (this.#pendingDetectNetwork) {
-                return await this.#pendingDetectNetwork;
+                return this.#pendingDetectNetwork;
             }
             // If we are ready, use ``send``, which enabled requests to be batched
             if (this.ready) {
-                this.#pendingDetectNetwork = (async () => {
+                this.#pendingDetectNetwork = (() => {
                     try {
-                        const result = Network.from(getBigInt(await this.send("eth_chainId", [])));
+                        const result = Network.from(getBigInt(this.send("eth_chainId", [])));
                         this.#pendingDetectNetwork = null;
                         return result;
                     }
@@ -20141,17 +18960,17 @@
                         throw error;
                     }
                 })();
-                return await this.#pendingDetectNetwork;
+                return this.#pendingDetectNetwork;
             }
             // We are not ready yet; use the primitive _send
-            this.#pendingDetectNetwork = (async () => {
+            this.#pendingDetectNetwork = (() => {
                 const payload = {
                     id: this.#nextId++, method: "eth_chainId", params: [], jsonrpc: "2.0"
                 };
                 this.emit("debug", { action: "sendRpcPayload", payload });
                 let result;
                 try {
-                    result = (await this._send(payload))[0];
+                    result = (this._send(payload))[0];
                     this.#pendingDetectNetwork = null;
                 }
                 catch (error) {
@@ -20165,7 +18984,7 @@
                 }
                 throw this.getRpcError(payload, result);
             })();
-            return await this.#pendingDetectNetwork;
+            return this.#pendingDetectNetwork;
         }
         /**
          *  Sub-classes **MUST** call this. Until [[_start]] has been called, no calls
@@ -20178,59 +18997,13 @@
             if (this.#notReady == null || this.#notReady.resolve == null) {
                 return;
             }
+
             this.#notReady.resolve();
             this.#notReady = null;
-            (async () => {
-                // Bootstrap the network
-                while (this.#network == null && !this.destroyed) {
-                    try {
-                        this.#network = await this._detectNetwork();
-                    }
-                    catch (error) {
-                        if (this.destroyed) {
-                            break;
-                        }
-                        console.log("JsonRpcProvider failed to detect network and cannot start up; retry in 1s (perhaps the URL is wrong or the node is not started)");
-                        this.emit("error", makeError("failed to bootstrap network detection", "NETWORK_ERROR", { event: "initial-network-discovery", info: { error } }));
-                        // await stall$3(1000);
-                    }
-                }
-            })();
-        }
-        /**
-         *  Resolves once the [[_start]] has been called. This can be used in
-         *  sub-classes to defer sending data until the connection has been
-         *  established.
-         */
-        async _waitUntilReady() {
-            if (this.#notReady == null) {
-                return;
+            // Bootstrap the network
+            while (this.#network == null && !this.destroyed) {
+                this.#network = this._detectNetwork();
             }
-            return await this.#notReady.promise;
-        }
-        /**
-         *  Return a Subscriber that will manage the %%sub%%.
-         *
-         *  Sub-classes may override this to modify the behavior of
-         *  subscription management.
-         */
-        _getSubscriber(sub) {
-            // Pending Filters aren't availble via polling
-            if (sub.type === "pending") {
-                return new FilterIdPendingSubscriber(this);
-            }
-            if (sub.type === "event") {
-                if (this._getOption("polling")) {
-                    return new PollingEventSubscriber(this, sub.filter);
-                }
-                return new FilterIdEventSubscriber(this, sub.filter);
-            }
-            // Orphaned Logs are handled automatically, by the filter, since
-            // logs with removed are emitted by it
-            if (sub.type === "orphan" && sub.filter.orphan === "drop-log") {
-                return new UnmanagedSubscriber("orphan");
-            }
-            return super._getSubscriber(sub);
         }
         /**
          *  Returns true only if the [[_start]] has been called.
@@ -20462,13 +19235,8 @@
                 return Promise.reject(makeError("provider destroyed; cancelled request", "UNSUPPORTED_OPERATION", { operation: method }));
             }
             const id = this.#nextId++;
-            var promise = new Promise(async (resolve, reject) => {
-                var payload = { method, params, id, jsonrpc: "2.0" };
-                var result = await this.#scheduleDrain(payload);
-                resolve(result);
-            });
-            // If there is not a pending drainTimer, set one
-            return promise;
+            var payload = { method, params, id, jsonrpc: "2.0" };
+            return this.#scheduleDrain(payload);
         }
         /**
          *  Resolves to the [[Signer]] account for  %%address%% managed by
@@ -20482,20 +19250,20 @@
          *
          *  Throws if the account doesn't exist.
          */
-        async getSigner(address) {
+        getSigner(address) {
             if (address == null) {
                 address = 0;
             }
             const accountsPromise = this.send("eth_accounts", []);
             // Account index
             if (typeof (address) === "number") {
-                const accounts = (await accountsPromise);
+                const accounts = (accountsPromise);
                 if (address >= accounts.length) {
                     throw new Error("no such account");
                 }
                 return new JsonRpcSigner(this, accounts[address]);
             }
-            const { accounts } = await resolveProperties({
+            const { accounts } = resolveProperties({
                 network: this.getNetwork(),
                 accounts: accountsPromise
             });
@@ -20508,8 +19276,8 @@
             }
             throw new Error("invalid account");
         }
-        async listAccounts() {
-            const accounts = await this.send("eth_accounts", []);
+        listAccounts() {
+            const accounts = this.send("eth_accounts", []);
             return accounts.map((a) => new JsonRpcSigner(this, a));
         }
     }
@@ -20577,19 +19345,19 @@
         _getConnection() {
             return this.#connect.clone();
         }
-        async send(method, params) {
+        send(method, params) {
             // All requests are over HTTP, so we can just start handling requests
             // We do this here rather than the constructor so that we don't send any
             // requests to the network (i.e. eth_chainId) until we absolutely have to.
-            await this._start();
-            return await super.send(method, params);
+            this._start();
+            return super.send(method, params);
         }
-        async _send(payload) {
+        _send(payload) {
             // Configure a POST connection for the requested method
             const request = this._getConnection();
             request.body = JSON.stringify(payload);
             request.setHeader("content-type", "application/json");
-            const response = await request.send();
+            const response = request.send();
             response.assertOk();
             let resp = response.bodyJson;
             if (!Array.isArray(resp)) {
@@ -20762,7 +19530,7 @@
             const request = new FetchRequest(`https:/\/${getHost$5(network.name)}/${apiKey}`);
             request.allowGzip = true;
             if (apiKey === defaultApiKey$1) {
-                request.retryFunc = async (request, response, attempt) => {
+                request.retryFunc = (request, response, attempt) => {
                     showThrottleMessage("AnkrProvider");
                     return true;
                 };
@@ -20874,10 +19642,10 @@
             catch (error) { }
             return super._getProvider(chainId);
         }
-        async _perform(req) {
+        _perform(req) {
             // https://docs.alchemy.com/reference/trace-transaction
             if (req.method === "getTransactionResult") {
-                const { trace, tx } = await resolveProperties({
+                const { trace, tx } = resolveProperties({
                     trace: this.send("trace_transaction", [req.hash]),
                     tx: this.getTransaction(req.hash)
                 });
@@ -20904,7 +19672,7 @@
                 }
                 assert(false, "could not parse trace result", "BAD_DATA", { value: trace });
             }
-            return await super._perform(req);
+            return super._perform(req);
         }
         isCommunityResource() {
             return (this.apiKey === defaultApiKey);
@@ -20916,7 +19684,7 @@
             const request = new FetchRequest(`https:/\/${getHost$4(network.name)}/v2/${apiKey}`);
             request.allowGzip = true;
             if (apiKey === defaultApiKey) {
-                request.retryFunc = async (request, response, attempt) => {
+                request.retryFunc = (request, response, attempt) => {
                     showThrottleMessage("alchemy");
                     return true;
                 };
@@ -21010,7 +19778,7 @@
             const request = new FetchRequest(`https:/\/${getHost$3(network.name)}/${apiKey}`);
             request.allowGzip = true;
             if (apiKey === getApiKey(network.name)) {
-                request.retryFunc = async (request, response, attempt) => {
+                request.retryFunc = (request, response, attempt) => {
                     showThrottleMessage("ChainstackProvider");
                     return true;
                 };
@@ -21064,9 +19832,6 @@
      *  @_subsection api/providers/thirdparty:Etherscan  [providers-etherscan]
      */
     const THROTTLE = 2000;
-    function isPromise(value) {
-        return (value && typeof (value.then) === "function");
-    }
     const EtherscanPluginId = "org.ethers.plugins.provider.Etherscan";
     /**
      *  A Network can include an **EtherscanPlugin** to provide
@@ -21198,7 +19963,7 @@
             params.apikey = this.apiKey;
             return params;
         }
-        async detectNetwork() {
+        detectNetwork() {
             return this.network;
         }
         /**
@@ -21206,7 +19971,7 @@
          *
          *  If %%post%%, the request is made as a POST request.
          */
-        async fetch(module, params, post) {
+        fetch(module, params, post) {
             const id = nextId++;
             const url = (post ? this.getPostUrl() : this.getUrl(module, params));
             const payload = (post ? this.getPostData(module, params) : null);
@@ -21219,7 +19984,7 @@
                 }
                 return Promise.resolve(true);
             };
-            request.processFunc = async (request, response) => {
+            request.processFunc = (request, response) => {
                 const result = response.hasBody() ? JSON.parse(toUtf8String(response.body)) : {};
                 const throttle = ((typeof (result.result) === "string") ? result.result : "").toLowerCase().indexOf("rate limit") >= 0;
                 if (module === "proxy") {
@@ -21241,7 +20006,7 @@
                 request.setHeader("content-type", "application/x-www-form-urlencoded; charset=UTF-8");
                 request.body = Object.keys(payload).map((k) => `${k}=${payload[k]}`).join("&");
             }
-            const response = await request.send();
+            const response = request.send();
             try {
                 response.assertOk();
             }
@@ -21386,10 +20151,10 @@
             // Something we could not process
             throw error;
         }
-        async _detectNetwork() {
+        _detectNetwork() {
             return this.network;
         }
-        async _perform(req) {
+        _perform(req) {
             switch (req.method) {
                 case "chainId":
                     return this.network.chainId;
@@ -21410,7 +20175,7 @@
                     }
                 /* Working with Etherscan to get this added:
                 try {
-                    const test = await this.fetch("proxy", {
+                    const test = this.fetch("proxy", {
                         action: "eth_maxPriorityFeePerGas"
                     });
                     console.log(test);
@@ -21423,7 +20188,7 @@
                 /* This might be safe; but due to rounding neither myself
                    or Etherscan are necessarily comfortable with this. :)
                 try {
-                    const result = await this.fetch("gastracker", { action: "gasoracle" });
+                    const result = this.fetch("gastracker", { action: "gasoracle" });
                     console.log(result);
                     const gasPrice = parseUnits(result.SafeGasPrice, "gwei");
                     const baseFee = parseUnits(result.suggestBaseFee, "gwei");
@@ -21497,7 +20262,7 @@
                     postData.module = "proxy";
                     postData.action = "eth_call";
                     try {
-                        return await this.fetch("proxy", postData, true);
+                        return this.fetch("proxy", postData, true);
                     }
                     catch (error) {
                         return this._checkError(req, error, req.transaction);
@@ -21508,7 +20273,7 @@
                     postData.module = "proxy";
                     postData.action = "eth_estimateGas";
                     try {
-                        return await this.fetch("proxy", postData, true);
+                        return this.fetch("proxy", postData, true);
                     }
                     catch (error) {
                         return this._checkError(req, error, req.transaction);
@@ -21517,7 +20282,7 @@
             }
             return super._perform(req);
         }
-        async getNetwork() {
+        getNetwork() {
             return this.network;
         }
         /**
@@ -21525,23 +20290,20 @@
          *
          *  This returns ``0`` on any network other than ``mainnet``.
          */
-        async getEtherPrice() {
+        getEtherPrice() {
             if (this.network.name !== "mainnet") {
                 return 0.0;
             }
-            return parseFloat((await this.fetch("stats", { action: "ethprice" })).ethusd);
+            return parseFloat((this.fetch("stats", { action: "ethprice" })).ethusd);
         }
         /**
          *  Resolves to a [Contract]] for %%address%%, using the
          *  Etherscan API to retreive the Contract ABI.
          */
-        async getContract(_address) {
+        getContract(_address) {
             let address = this._getAddress(_address);
-            if (isPromise(address)) {
-                address = await address;
-            }
             try {
-                const resp = await this.fetch("contract", {
+                const resp = this.fetch("contract", {
                     action: "getabi", address
                 });
                 const abi = JSON.parse(resp);
@@ -21556,585 +20318,6 @@
         }
     }
 
-    function getGlobal() {
-        if (typeof self !== 'undefined') {
-            return self;
-        }
-        if (typeof window !== 'undefined') {
-            return window;
-        }
-        if (typeof global !== 'undefined') {
-            return global;
-        }
-        throw new Error('unable to locate global object');
-    }
-    const _WebSocket = getGlobal().WebSocket;
-
-    /**
-     *  Generic long-lived socket provider.
-     *
-     *  Sub-classing notes
-     *  - a sub-class MUST call the `_start()` method once connected
-     *  - a sub-class MUST override the `_write(string)` method
-     *  - a sub-class MUST call `_processMessage(string)` for each message
-     *
-     *  @_subsection: api/providers/abstract-provider:Socket Providers  [about-socketProvider]
-     */
-    /**
-     *  A **SocketSubscriber** uses a socket transport to handle events and
-     *  should use [[_emit]] to manage the events.
-     */
-    class SocketSubscriber {
-        #provider;
-        #filter;
-        /**
-         *  The filter.
-         */
-        get filter() { return JSON.parse(this.#filter); }
-        #filterId;
-        #paused;
-        #emitPromise;
-        /**
-         *  Creates a new **SocketSubscriber** attached to %%provider%% listening
-         *  to %%filter%%.
-         */
-        constructor(provider, filter) {
-            this.#provider = provider;
-            this.#filter = JSON.stringify(filter);
-            this.#filterId = null;
-            this.#paused = null;
-            this.#emitPromise = null;
-        }
-        start() {
-            this.#filterId = this.#provider.send("eth_subscribe", this.filter).then((filterId) => {
-                this.#provider._register(filterId, this);
-                return filterId;
-            });
-        }
-        stop() {
-            (this.#filterId).then((filterId) => {
-                if (this.#provider.destroyed) {
-                    return;
-                }
-                this.#provider.send("eth_unsubscribe", [filterId]);
-            });
-            this.#filterId = null;
-        }
-        // @TODO: pause should trap the current blockNumber, unsub, and on resume use getLogs
-        //        and resume
-        pause(dropWhilePaused) {
-            assert(dropWhilePaused, "preserve logs while paused not supported by SocketSubscriber yet", "UNSUPPORTED_OPERATION", { operation: "pause(false)" });
-            this.#paused = !!dropWhilePaused;
-        }
-        resume() {
-            this.#paused = null;
-        }
-        /**
-         *  @_ignore:
-         */
-        _handleMessage(message) {
-            if (this.#filterId == null) {
-                return;
-            }
-            if (this.#paused === null) {
-                let emitPromise = this.#emitPromise;
-                if (emitPromise == null) {
-                    emitPromise = this._emit(this.#provider, message);
-                }
-                else {
-                    emitPromise = emitPromise.then(async () => {
-                        await this._emit(this.#provider, message);
-                    });
-                }
-                this.#emitPromise = emitPromise.then(() => {
-                    if (this.#emitPromise === emitPromise) {
-                        this.#emitPromise = null;
-                    }
-                });
-            }
-        }
-        /**
-         *  Sub-classes **must** override this to emit the events on the
-         *  provider.
-         */
-        async _emit(provider, message) {
-            throw new Error("sub-classes must implemente this; _emit");
-        }
-    }
-    /**
-     *  A **SocketBlockSubscriber** listens for ``newHeads`` events and emits
-     *  ``"block"`` events.
-     */
-    class SocketBlockSubscriber extends SocketSubscriber {
-        /**
-         *  @_ignore:
-         */
-        constructor(provider) {
-            super(provider, ["newHeads"]);
-        }
-        async _emit(provider, message) {
-            provider.emit("block", parseInt(message.number));
-        }
-    }
-    /**
-     *  A **SocketPendingSubscriber** listens for pending transacitons and emits
-     *  ``"pending"`` events.
-     */
-    class SocketPendingSubscriber extends SocketSubscriber {
-        /**
-         *  @_ignore:
-         */
-        constructor(provider) {
-            super(provider, ["newPendingTransactions"]);
-        }
-        async _emit(provider, message) {
-            provider.emit("pending", message);
-        }
-    }
-    /**
-     *  A **SocketEventSubscriber** listens for event logs.
-     */
-    class SocketEventSubscriber extends SocketSubscriber {
-        #logFilter;
-        /**
-         *  The filter.
-         */
-        get logFilter() { return JSON.parse(this.#logFilter); }
-        /**
-         *  @_ignore:
-         */
-        constructor(provider, filter) {
-            super(provider, ["logs", filter]);
-            this.#logFilter = JSON.stringify(filter);
-        }
-        async _emit(provider, message) {
-            provider.emit(this.logFilter, provider._wrapLog(message, provider._network));
-        }
-    }
-    /**
-     *  A **SocketProvider** is backed by a long-lived connection over a
-     *  socket, which can subscribe and receive real-time messages over
-     *  its communication channel.
-     */
-    class SocketProvider extends JsonRpcApiProvider {
-        #callbacks;
-        // Maps each filterId to its subscriber
-        #subs;
-        // If any events come in before a subscriber has finished
-        // registering, queue them
-        #pending;
-        /**
-         *  Creates a new **SocketProvider** connected to %%network%%.
-         *
-         *  If unspecified, the network will be discovered.
-         */
-        constructor(network, _options) {
-            // Copy the options
-            const options = Object.assign({}, (_options != null) ? _options : {});
-            // Support for batches is generally not supported for
-            // connection-base providers; if this changes in the future
-            // the _send should be updated to reflect this
-            assertArgument(options.batchMaxCount == null || options.batchMaxCount === 1, "sockets-based providers do not support batches", "options.batchMaxCount", _options);
-            options.batchMaxCount = 1;
-            // Socket-based Providers (generally) cannot change their network,
-            // since they have a long-lived connection; but let people override
-            // this if they have just cause.
-            if (options.staticNetwork == null) {
-                options.staticNetwork = true;
-            }
-            super(network, options);
-            this.#callbacks = new Map();
-            this.#subs = new Map();
-            this.#pending = new Map();
-        }
-        // This value is only valid after _start has been called
-        /*
-        get _network(): Network {
-            if (this.#network == null) {
-                throw new Error("this shouldn't happen");
-            }
-            return this.#network.clone();
-        }
-        */
-        _getSubscriber(sub) {
-            switch (sub.type) {
-                case "close":
-                    return new UnmanagedSubscriber("close");
-                case "block":
-                    return new SocketBlockSubscriber(this);
-                case "pending":
-                    return new SocketPendingSubscriber(this);
-                case "event":
-                    return new SocketEventSubscriber(this, sub.filter);
-                case "orphan":
-                    // Handled auto-matically within AbstractProvider
-                    // when the log.removed = true
-                    if (sub.filter.orphan === "drop-log") {
-                        return new UnmanagedSubscriber("drop-log");
-                    }
-            }
-            return super._getSubscriber(sub);
-        }
-        /**
-         *  Register a new subscriber. This is used internalled by Subscribers
-         *  and generally is unecessary unless extending capabilities.
-         */
-        _register(filterId, subscriber) {
-            this.#subs.set(filterId, subscriber);
-            const pending = this.#pending.get(filterId);
-            if (pending) {
-                for (const message of pending) {
-                    subscriber._handleMessage(message);
-                }
-                this.#pending.delete(filterId);
-            }
-        }
-        async _send(payload) {
-            // WebSocket provider doesn't accept batches
-            assertArgument(!Array.isArray(payload), "WebSocket does not support batch send", "payload", payload);
-            // @TODO: stringify payloads here and store to prevent mutations
-            // Prepare a promise to respond to
-            const promise = new Promise((resolve, reject) => {
-                this.#callbacks.set(payload.id, { payload, resolve, reject });
-            });
-            // Wait until the socket is connected before writing to it
-            await this._waitUntilReady();
-            // Write the request to the socket
-            await this._write(JSON.stringify(payload));
-            return [await promise];
-        }
-        // Sub-classes must call this once they are connected
-        /*
-        async _start(): Promise<void> {
-            if (this.#ready) { return; }
-
-            for (const { payload } of this.#callbacks.values()) {
-                await this._write(JSON.stringify(payload));
-            }
-
-            this.#ready = (async function() {
-                await super._start();
-            })();
-        }
-        */
-        /**
-         *  Sub-classes **must** call this with messages received over their
-         *  transport to be processed and dispatched.
-         */
-        async _processMessage(message) {
-            const result = (JSON.parse(message));
-            if (result && typeof (result) === "object" && "id" in result) {
-                const callback = this.#callbacks.get(result.id);
-                if (callback == null) {
-                    this.emit("error", makeError("received result for unknown id", "UNKNOWN_ERROR", {
-                        reasonCode: "UNKNOWN_ID",
-                        result
-                    }));
-                    return;
-                }
-                this.#callbacks.delete(result.id);
-                callback.resolve(result);
-            }
-            else if (result && result.method === "eth_subscription") {
-                const filterId = result.params.subscription;
-                const subscriber = this.#subs.get(filterId);
-                if (subscriber) {
-                    subscriber._handleMessage(result.params.result);
-                }
-                else {
-                    let pending = this.#pending.get(filterId);
-                    if (pending == null) {
-                        pending = [];
-                        this.#pending.set(filterId, pending);
-                    }
-                    pending.push(result.params.result);
-                }
-            }
-            else {
-                this.emit("error", makeError("received unexpected message", "UNKNOWN_ERROR", {
-                    reasonCode: "UNEXPECTED_MESSAGE",
-                    result
-                }));
-                return;
-            }
-        }
-        /**
-         *  Sub-classes **must** override this to send %%message%% over their
-         *  transport.
-         */
-        async _write(message) {
-            throw new Error("sub-classes must override this");
-        }
-    }
-
-    /**
-     *  A JSON-RPC provider which is backed by a WebSocket.
-     *
-     *  WebSockets are often preferred because they retain a live connection
-     *  to a server, which permits more instant access to events.
-     *
-     *  However, this incurs higher server infrasturture costs, so additional
-     *  resources may be required to host your own WebSocket nodes and many
-     *  third-party services charge additional fees for WebSocket endpoints.
-     */
-    class WebSocketProvider extends SocketProvider {
-        #connect;
-        #websocket;
-        get websocket() {
-            if (this.#websocket == null) {
-                throw new Error("websocket closed");
-            }
-            return this.#websocket;
-        }
-        constructor(url, network, options) {
-            super(network, options);
-            if (typeof (url) === "string") {
-                this.#connect = () => { return new _WebSocket(url); };
-                this.#websocket = this.#connect();
-            }
-            else if (typeof (url) === "function") {
-                this.#connect = url;
-                this.#websocket = url();
-            }
-            else {
-                this.#connect = null;
-                this.#websocket = url;
-            }
-            this.websocket.onopen = async () => {
-                try {
-                    await this._start();
-                    this.resume();
-                }
-                catch (error) {
-                    console.log("failed to start WebsocketProvider", error);
-                    // @TODO: now what? Attempt reconnect?
-                }
-            };
-            this.websocket.onmessage = (message) => {
-                this._processMessage(message.data);
-            };
-            /*
-                    this.websocket.onclose = (event) => {
-                        // @TODO: What event.code should we reconnect on?
-                        const reconnect = false;
-                        if (reconnect) {
-                            this.pause(true);
-                            if (this.#connect) {
-                                this.#websocket = this.#connect();
-                                this.#websocket.onopen = ...
-                                // @TODO: this requires the super class to rebroadcast; move it there
-                            }
-                            this._reconnect();
-                        }
-                    };
-            */
-        }
-        async _write(message) {
-            this.websocket.send(message);
-        }
-        async destroy() {
-            if (this.#websocket != null) {
-                this.#websocket.close();
-                this.#websocket = null;
-            }
-            super.destroy();
-        }
-    }
-
-    /**
-     *  [[link-infura]] provides a third-party service for connecting to
-     *  various blockchains over JSON-RPC.
-     *
-     *  **Supported Networks**
-     *
-     *  - Ethereum Mainnet (``mainnet``)
-     *  - Goerli Testnet (``goerli``)
-     *  - Sepolia Testnet (``sepolia``)
-     *  - Arbitrum (``arbitrum``)
-     *  - Arbitrum Goerli Testnet (``arbitrum-goerli``)
-     *  - Arbitrum Sepolia Testnet (``arbitrum-sepolia``)
-     *  - Base (``base``)
-     *  - Base Goerlia Testnet (``base-goerli``)
-     *  - Base Sepolia Testnet (``base-sepolia``)
-     *  - BNB Smart Chain Mainnet (``bnb``)
-     *  - BNB Smart Chain Testnet (``bnbt``)
-     *  - Linea (``linea``)
-     *  - Linea Goerli Testnet (``linea-goerli``)
-     *  - Linea Sepolia Testnet (``linea-sepolia``)
-     *  - Optimism (``optimism``)
-     *  - Optimism Goerli Testnet (``optimism-goerli``)
-     *  - Optimism Sepolia Testnet (``optimism-sepolia``)
-     *  - Polygon (``matic``)
-     *  - Polygon Amoy Testnet (``matic-amoy``)
-     *  - Polygon Mumbai Testnet (``matic-mumbai``)
-     *
-     *  @_subsection: api/providers/thirdparty:INFURA  [providers-infura]
-     */
-    const defaultProjectId = "84842078b09946638c03157f83405213";
-    function getHost$2(name) {
-        switch (name) {
-            case "mainnet":
-                return "mainnet.infura.io";
-            case "goerli":
-                return "goerli.infura.io";
-            case "sepolia":
-                return "sepolia.infura.io";
-            case "arbitrum":
-                return "arbitrum-mainnet.infura.io";
-            case "arbitrum-goerli":
-                return "arbitrum-goerli.infura.io";
-            case "arbitrum-sepolia":
-                return "arbitrum-sepolia.infura.io";
-            case "base":
-                return "base-mainnet.infura.io";
-            case "base-goerlia":
-                return "base-goerli.infura.io";
-            case "base-sepolia":
-                return "base-sepolia.infura.io";
-            case "bnb":
-                return "bnbsmartchain-mainnet.infura.io";
-            case "bnbt":
-                return "bnbsmartchain-testnet.infura.io";
-            case "linea":
-                return "linea-mainnet.infura.io";
-            case "linea-goerli":
-                return "linea-goerli.infura.io";
-            case "linea-sepolia":
-                return "linea-sepolia.infura.io";
-            case "matic":
-                return "polygon-mainnet.infura.io";
-            case "matic-amoy":
-                return "polygon-amoy.infura.io";
-            case "matic-mumbai":
-                return "polygon-mumbai.infura.io";
-            case "optimism":
-                return "optimism-mainnet.infura.io";
-            case "optimism-goerli":
-                return "optimism-goerli.infura.io";
-            case "optimism-sepolia":
-                return "optimism-sepolia.infura.io";
-        }
-        assertArgument(false, "unsupported network", "network", name);
-    }
-    /**
-     *  The **InfuraWebSocketProvider** connects to the [[link-infura]]
-     *  WebSocket end-points.
-     *
-     *  By default, a highly-throttled API key is used, which is
-     *  appropriate for quick prototypes and simple scripts. To
-     *  gain access to an increased rate-limit, it is highly
-     *  recommended to [sign up here](link-infura-signup).
-     */
-    class InfuraWebSocketProvider extends WebSocketProvider {
-        /**
-         *  The Project ID for the INFURA connection.
-         */
-        projectId;
-        /**
-         *  The Project Secret.
-         *
-         *  If null, no authenticated requests are made. This should not
-         *  be used outside of private contexts.
-         */
-        projectSecret;
-        /**
-         *  Creates a new **InfuraWebSocketProvider**.
-         */
-        constructor(network, projectId) {
-            const provider = new InfuraProvider(network, projectId);
-            const req = provider._getConnection();
-            assert(!req.credentials, "INFURA WebSocket project secrets unsupported", "UNSUPPORTED_OPERATION", { operation: "InfuraProvider.getWebSocketProvider()" });
-            const url = req.url.replace(/^http/i, "ws").replace("/v3/", "/ws/v3/");
-            super(url, provider._network);
-            defineProperties(this, {
-                projectId: provider.projectId,
-                projectSecret: provider.projectSecret
-            });
-        }
-        isCommunityResource() {
-            return (this.projectId === defaultProjectId);
-        }
-    }
-    /**
-     *  The **InfuraProvider** connects to the [[link-infura]]
-     *  JSON-RPC end-points.
-     *
-     *  By default, a highly-throttled API key is used, which is
-     *  appropriate for quick prototypes and simple scripts. To
-     *  gain access to an increased rate-limit, it is highly
-     *  recommended to [sign up here](link-infura-signup).
-     */
-    class InfuraProvider extends JsonRpcProvider {
-        /**
-         *  The Project ID for the INFURA connection.
-         */
-        projectId;
-        /**
-         *  The Project Secret.
-         *
-         *  If null, no authenticated requests are made. This should not
-         *  be used outside of private contexts.
-         */
-        projectSecret;
-        /**
-         *  Creates a new **InfuraProvider**.
-         */
-        constructor(_network, projectId, projectSecret) {
-            if (_network == null) {
-                _network = "mainnet";
-            }
-            const network = Network.from(_network);
-            if (projectId == null) {
-                projectId = defaultProjectId;
-            }
-            if (projectSecret == null) {
-                projectSecret = null;
-            }
-            const request = InfuraProvider.getRequest(network, projectId, projectSecret);
-            super(request, network, { staticNetwork: network });
-            defineProperties(this, { projectId, projectSecret });
-        }
-        _getProvider(chainId) {
-            try {
-                return new InfuraProvider(chainId, this.projectId, this.projectSecret);
-            }
-            catch (error) { }
-            return super._getProvider(chainId);
-        }
-        isCommunityResource() {
-            return (this.projectId === defaultProjectId);
-        }
-        /**
-         *  Creates a new **InfuraWebSocketProvider**.
-         */
-        static getWebSocketProvider(network, projectId) {
-            return new InfuraWebSocketProvider(network, projectId);
-        }
-        /**
-         *  Returns a prepared request for connecting to %%network%%
-         *  with %%projectId%% and %%projectSecret%%.
-         */
-        static getRequest(network, projectId, projectSecret) {
-            if (projectId == null) {
-                projectId = defaultProjectId;
-            }
-            if (projectSecret == null) {
-                projectSecret = null;
-            }
-            const request = new FetchRequest(`https:/\/${getHost$2(network.name)}/v3/${projectId}`);
-            request.allowGzip = true;
-            if (projectSecret) {
-                request.setCredentials("", projectSecret);
-            }
-            if (projectId === defaultProjectId) {
-                request.retryFunc = async (request, response, attempt) => {
-                    showThrottleMessage("InfuraProvider");
-                    return true;
-                };
-            }
-            return request;
-        }
-    }
 
     /**
      *  [[link-quicknode]] provides a third-party service for connecting to
@@ -22282,7 +20465,7 @@
             request.allowGzip = true;
             //if (projectSecret) { request.setCredentials("", projectSecret); }
             if (token === defaultToken) {
-                request.retryFunc = async (request, response, attempt) => {
+                request.retryFunc = (request, response, attempt) => {
                     showThrottleMessage("QuickNodeProvider");
                     return true;
                 };
@@ -22308,11 +20491,7 @@
         }
     }
     function stall$2(duration) {
-        // return new Promise((resolve) => { setTimeout(resolve, duration); });
-        return new Promise(resolve => {
-            Thread.sleep(duration);
-            resolve();
-        })
+        Thread.sleep(duration);
     }
     function getTime() { return (new Date()).getTime(); }
     function stringify(value) {
@@ -22330,12 +20509,12 @@
         _network: null, _updateNumber: null, _totalTime: 0,
         _lastFatalError: null, _lastFatalErrorTimestamp: 0
     };
-    async function waitForSync(config, blockNumber) {
+    function waitForSync(config, blockNumber) {
         while (config.blockNumber < 0 || config.blockNumber < blockNumber) {
             if (!config._updateNumber) {
-                config._updateNumber = (async () => {
+                config._updateNumber = (() => {
                     try {
-                        const blockNumber = await config.provider.getBlockNumber();
+                        const blockNumber = config.provider.getBlockNumber();
                         if (blockNumber > config.blockNumber) {
                             config.blockNumber = blockNumber;
                         }
@@ -22348,7 +20527,7 @@
                     config._updateNumber = null;
                 })();
             }
-            await config._updateNumber;
+            config._updateNumber;
             config.outOfSync++;
             if (config._lastFatalError) {
                 break;
@@ -22559,8 +20738,8 @@
                 return result;
             });
         }
-        async _detectNetwork() {
-            return Network.from(getBigInt(await this._perform({ method: "chainId" })));
+        _detectNetwork() {
+            return Network.from(getBigInt(this._perform({ method: "chainId" })));
         }
         // @TODO: Add support to select providers to be the event subscriber
         //_getSubscriber(sub: Subscription): Subscriber {
@@ -22569,42 +20748,42 @@
         /**
          *  Transforms a %%req%% into the correct method call on %%provider%%.
          */
-        async _translatePerform(provider, req) {
+        _translatePerform(provider, req) {
             switch (req.method) {
                 case "broadcastTransaction":
-                    return await provider.broadcastTransaction(req.signedTransaction);
+                    return provider.broadcastTransaction(req.signedTransaction);
                 case "call":
-                    return await provider.call(Object.assign({}, req.transaction, { blockTag: req.blockTag }));
+                    return provider.call(Object.assign({}, req.transaction, { blockTag: req.blockTag }));
                 case "chainId":
-                    return (await provider.getNetwork()).chainId;
+                    return (provider.getNetwork()).chainId;
                 case "estimateGas":
-                    return await provider.estimateGas(req.transaction);
+                    return provider.estimateGas(req.transaction);
                 case "getBalance":
-                    return await provider.getBalance(req.address, req.blockTag);
+                    return provider.getBalance(req.address, req.blockTag);
                 case "getBlock": {
                     const block = ("blockHash" in req) ? req.blockHash : req.blockTag;
-                    return await provider.getBlock(block, req.includeTransactions);
+                    return provider.getBlock(block, req.includeTransactions);
                 }
                 case "getBlockNumber":
-                    return await provider.getBlockNumber();
+                    return provider.getBlockNumber();
                 case "getCode":
-                    return await provider.getCode(req.address, req.blockTag);
+                    return provider.getCode(req.address, req.blockTag);
                 case "getGasPrice":
-                    return (await provider.getFeeData()).gasPrice;
+                    return (provider.getFeeData()).gasPrice;
                 case "getPriorityFee":
-                    return (await provider.getFeeData()).maxPriorityFeePerGas;
+                    return (provider.getFeeData()).maxPriorityFeePerGas;
                 case "getLogs":
-                    return await provider.getLogs(req.filter);
+                    return provider.getLogs(req.filter);
                 case "getStorage":
-                    return await provider.getStorage(req.address, req.position, req.blockTag);
+                    return provider.getStorage(req.address, req.position, req.blockTag);
                 case "getTransaction":
-                    return await provider.getTransaction(req.hash);
+                    return provider.getTransaction(req.hash);
                 case "getTransactionCount":
-                    return await provider.getTransactionCount(req.address, req.blockTag);
+                    return provider.getTransactionCount(req.address, req.blockTag);
                 case "getTransactionReceipt":
-                    return await provider.getTransactionReceipt(req.hash);
+                    return provider.getTransactionReceipt(req.hash);
                 case "getTransactionResult":
-                    return await provider.getTransactionResult(req.hash);
+                    return provider.getTransactionResult(req.hash);
             }
         }
         // Grab the next (random) config that is not already part of
@@ -22642,10 +20821,10 @@
             };
             const now = getTime();
             // Start performing this operation
-            runner.perform = (async () => {
+            runner.perform = (() => {
                 try {
                     config.requests++;
-                    const result = await this._translatePerform(config.provider, req);
+                    const result = this._translatePerform(config.provider, req);
                     runner.result = { result };
                 }
                 catch (error) {
@@ -22659,8 +20838,8 @@
             })();
             // Start a staller; when this times out, it's time to force
             // kicking off another runner because we are taking too long
-            runner.staller = (async () => {
-                await stall$2(config.stallTimeout);
+            runner.staller = (() => {
+                stall$2(config.stallTimeout);
                 runner.staller = null;
             })();
             running.add(runner);
@@ -22668,21 +20847,21 @@
         }
         // Initializes the blockNumber and network for each runner and
         // blocks until initialized
-        async #initialSync() {
+        #initialSync() {
             let initialSync = this.#initialSyncPromise;
             if (!initialSync) {
                 const promises = [];
                 this.#configs.forEach((config) => {
-                    promises.push((async () => {
-                        await waitForSync(config, 0);
+                    promises.push((() => {
+                        waitForSync(config, 0);
                         if (!config._lastFatalError) {
-                            config._network = await config.provider.getNetwork();
+                            config._network = config.provider.getNetwork();
                         }
                     })());
                 });
-                this.#initialSyncPromise = initialSync = (async () => {
+                this.#initialSyncPromise = initialSync = (() => {
                     // Wait for all providers to have a block number and network
-                    await Promise.all(promises);
+                    Promise.all(promises);
                     // Check all the networks match
                     let chainId = null;
                     for (const config of this.#configs) {
@@ -22701,9 +20880,9 @@
                     }
                 })();
             }
-            await initialSync;
+            initialSync;
         }
-        async #checkQuorum(running, req) {
+        #checkQuorum(running, req) {
             // Get all the result objects
             const results = [];
             for (const runner of running) {
@@ -22765,7 +20944,7 @@
                 operation: `_perform(${stringify(req.method)})`
             });
         }
-        async #waitForQuorum(running, req) {
+        #waitForQuorum(running, req) {
             if (running.size === 0) {
                 throw new Error("no runners?!");
             }
@@ -22792,7 +20971,7 @@
                 newRunners++;
             }
             // Check if we have reached quorum on a result (or error)
-            const value = await this.#checkQuorum(running, req);
+            const value = this.#checkQuorum(running, req);
             if (value !== undefined) {
                 if (value instanceof Error) {
                     throw value;
@@ -22810,12 +20989,12 @@
                 info: { request: req, results: Array.from(running).map((r) => stringify(r.result)) }
             });
             // Wait for someone to either complete its perform or stall out
-            await Promise.race(interesting);
+            Promise.race(interesting);
             // This is recursive, but at worst case the depth is 2x the
             // number of providers (each has a perform and a staller)
-            return await this.#waitForQuorum(running, req);
+            return this.#waitForQuorum(running, req);
         }
-        async _perform(req) {
+        _perform(req) {
             // Broadcasting a transaction is rare (ish) and already incurs
             // a cost on the user, so spamming is safe-ish. Just send it to
             // every backend.
@@ -22823,9 +21002,9 @@
                 // Once any broadcast provides a positive result, use it. No
                 // need to wait for anyone else
                 const results = this.#configs.map((c) => null);
-                const broadcasts = this.#configs.map(async ({ provider, weight }, index) => {
+                const broadcasts = this.#configs.map(({ provider, weight }, index) => {
                     try {
-                        const result = await provider._perform(req);
+                        const result = provider._perform(req);
                         results[index] = Object.assign(normalizeResult({ result }), { weight });
                     }
                     catch (error) {
@@ -22856,7 +21035,7 @@
                     if (waiting.length === 0) {
                         break;
                     }
-                    await Promise.race(waiting);
+                    Promise.race(waiting);
                 }
                 // Use standard quorum results; any result was returned above,
                 // so this will find any error that met quorum if any
@@ -22870,7 +21049,7 @@
                 }
                 return result;
             }
-            await this.#initialSync();
+            this.#initialSync();
             // Bootstrap enough runners to meet quorum
             const running = new Set();
             let inflightQuorum = 0;
@@ -22884,7 +21063,7 @@
                     break;
                 }
             }
-            const result = await this.#waitForQuorum(running, req);
+            const result = this.#waitForQuorum(running, req);
             // Track requests sent to a provider that are still
             // outstanding after quorum has been otherwise found
             for (const runner of running) {
@@ -22894,7 +21073,7 @@
             }
             return result;
         }
-        async destroy() {
+        destroy() {
             for (const { provider } of this.#configs) {
                 provider.destroy();
             }
@@ -22970,9 +21149,10 @@
         if (typeof (network) === "string" && network.match(/^https?:/)) {
             return new JsonRpcProvider(network);
         }
-        if (typeof (network) === "string" && network.match(/^wss?:/) || isWebSocketLike(network)) {
-            return new WebSocketProvider(network);
-        }
+        //todo make a new ws provider
+        // if (typeof (network) === "string" && network.match(/^wss?:/) || isWebSocketLike(network)) {
+        //     return new WebSocketProvider(network);
+        // }
         // Get the network and name, if possible
         let staticNetwork = null;
         try {
@@ -23098,19 +21278,19 @@
             this.#noncePromise = null;
             this.#delta = 0;
         }
-        async getAddress() {
+        getAddress() {
             return this.signer.getAddress();
         }
         connect(provider) {
             return new NonceManager(this.signer.connect(provider));
         }
-        async getNonce(blockTag) {
+        getNonce(blockTag) {
             if (blockTag === "pending") {
                 if (this.#noncePromise == null) {
                     this.#noncePromise = super.getNonce("pending");
                 }
                 const delta = this.#delta;
-                return (await this.#noncePromise) + delta;
+                return (this.#noncePromise) + delta;
             }
             return super.getNonce(blockTag);
         }
@@ -23129,14 +21309,14 @@
             this.#delta = 0;
             this.#noncePromise = null;
         }
-        async sendTransaction(tx) {
+        sendTransaction(tx) {
             const noncePromise = this.getNonce("pending");
             this.increment();
-            tx = await this.signer.populateTransaction(tx);
-            tx.nonce = await noncePromise;
+            tx = this.signer.populateTransaction(tx);
+            tx.nonce = noncePromise;
             // @TODO: Maybe handle interesting/recoverable errors?
             // Like don't increment if the tx was certainly not sent
-            return await this.signer.sendTransaction(tx);
+            return this.signer.sendTransaction(tx);
         }
         signTransaction(tx) {
             return this.signer.signTransaction(tx);
@@ -23238,7 +21418,7 @@
                 request.setCredentials("", applicationSecret);
             }
             if (applicationId === defaultApplicationId) {
-                request.retryFunc = async (request, response, attempt) => {
+                request.retryFunc = (request, response, attempt) => {
                     showThrottleMessage("PocketProvider");
                     return true;
                 };
@@ -23293,13 +21473,13 @@
          *  The private key for this wallet.
          */
         get privateKey() { return this.signingKey.privateKey; }
-        async getAddress() { return this.address; }
+        getAddress() { return this.address; }
         connect(provider) {
             return new BaseWallet(this.#signingKey, provider);
         }
-        async signTransaction(tx) {
+        signTransaction(tx) {
             // Replace any Addressable or ENS name with an address
-            const { to, from } = await resolveProperties({
+            const { to, from } = resolveProperties({
                 to: (tx.to ? resolveAddress(tx.to, this.provider) : undefined),
                 from: (tx.from ? resolveAddress(tx.from, this.provider) : undefined)
             });
@@ -23318,7 +21498,7 @@
             btx.signature = this.signingKey.sign(btx.unsignedHash);
             return btx.serialized;
         }
-        async signMessage(message) {
+        signMessage(message) {
             return this.signMessageSync(message);
         }
         // @TODO: Add a secialized signTx and signTyped sync that enforces
@@ -23329,16 +21509,16 @@
         signMessageSync(message) {
             return this.signingKey.sign(hashMessage(message)).serialized;
         }
-        async signTypedData(domain, types, value) {
+        signTypedData(domain, types, value) {
             // Populate any ENS names
-            const populated = await TypedDataEncoder.resolveNames(domain, types, value, async (name) => {
+            const populated = TypedDataEncoder.resolveNames(domain, types, value, (name) => {
                 // @TODO: this should use resolveName; addresses don't
                 //        need a provider
                 assert(this.provider != null, "cannot resolve ENS names without a provider", "UNSUPPORTED_OPERATION", {
                     operation: "resolveName",
                     info: { name }
                 });
-                const address = await this.provider.resolveName(name);
+                const address = this.provider.resolveName(name);
                 assert(address != null, "unconfigured ENS name", "UNCONFIGURED_NAME", {
                     value: name
                 });
@@ -24305,7 +22485,7 @@
      *  Returns the account details for the JSON Keystore Wallet %%json%%
      *  using %%password%%.
      *
-     *  It is preferred to use the [async version](decryptKeystoreJson)
+     *  It is preferred to use the [version](decryptKeystoreJson)
      *  instead, which allows a [[ProgressCallback]] to keep the user informed
      *  as to the decryption status.
      *
@@ -24327,13 +22507,6 @@
         const key = scryptSync(password, salt, N, r, p, dkLen);
         return getAccount(data, key);
     }
-    function stall$1(duration) {
-        // return new Promise((resolve) => { setTimeout(() => { resolve(); }, duration); });
-        return new Promise((resolve) => {
-            Thread.sleep(duration);
-            resolve();
-        });
-    }
     /**
      *  Resolves to the decrypted JSON Keystore Wallet %%json%% using the
      *  %%password%%.
@@ -24345,26 +22518,24 @@
      *  The %%progressCallback%% will **always** receive ``0`` before
      *  decryption begins and ``1`` when complete.
      */
-    async function decryptKeystoreJson(json, _password, progress) {
+    function decryptKeystoreJson(json, _password, progress) {
         const data = JSON.parse(json);
         const password = getPassword(_password);
         const params = getDecryptKdfParams(data);
         if (params.name === "pbkdf2") {
             if (progress) {
                 progress(0);
-                await stall$1(0);
             }
             const { salt, count, dkLen, algorithm } = params;
             const key = pbkdf2(password, salt, count, dkLen, algorithm);
             if (progress) {
                 progress(1);
-                await stall$1(0);
             }
             return getAccount(data, key);
         }
         assert(params.name === "scrypt", "cannot be reached", "UNKNOWN_ERROR", { params });
         const { salt, N, r, p, dkLen } = params;
-        const key = await scrypt(password, salt, N, r, p, dkLen, progress);
+        const key = scrypt(password, salt, N, r, p, dkLen, progress);
         return getAccount(data, key);
     }
     function getEncryptKdfParams(options) {
@@ -24481,13 +22652,13 @@
      *  used and provide a [[ProgressCallback]] to receive periodic updates
      *  on the completion status..
      */
-    async function encryptKeystoreJson(account, password, options) {
+    function encryptKeystoreJson(account, password, options) {
         if (options == null) {
             options = {};
         }
         const passwordBytes = getPassword(password);
         const kdf = getEncryptKdfParams(options);
-        const key = await scrypt(passwordBytes, kdf.salt, kdf.N, kdf.r, kdf.p, 64, options.progressCallback);
+        const key = scrypt(passwordBytes, kdf.salt, kdf.N, kdf.r, kdf.p, 64, options.progressCallback);
         return _encryptKeystore(getBytes(key), kdf, account, options);
     }
 
@@ -24660,14 +22831,14 @@
          *  If %%progressCallback%% is specified, it will receive periodic
          *  updates as the encryption process progreses.
          */
-        async encrypt(password, progressCallback) {
-            return await encryptKeystoreJson(this.#account(), password, { progressCallback });
+        encrypt(password, progressCallback) {
+            return encryptKeystoreJson(this.#account(), password, { progressCallback });
         }
         /**
          *  Returns a [JSON Keystore Wallet](json-wallets) encryped with
          *  %%password%%.
          *
-         *  It is preferred to use the [async version](encrypt) instead,
+         *  It is preferred to use the [version](encrypt) instead,
          *  which allows a [[ProgressCallback]] to keep the user informed.
          *
          *  This method will block the event loop (freezing all UI) until
@@ -25032,11 +23203,7 @@
     }
 
     function stall(duration) {
-        // return new Promise((resolve) => { setTimeout(() => { resolve(); }, duration); });
-        return new Promise((resolve) => {
-            Thread.sleep(duration);
-            resolve();
-        });
+        Thread.sleep(duration);
     }
     /**
      *  A **Wallet** manages a single private key which is used to sign
@@ -25070,15 +23237,15 @@
          *  If %%progressCallback%% is specified, it will receive periodic
          *  updates as the encryption process progreses.
          */
-        async encrypt(password, progressCallback) {
+        encrypt(password, progressCallback) {
             const account = { address: this.address, privateKey: this.privateKey };
-            return await encryptKeystoreJson(account, password, { progressCallback });
+            return encryptKeystoreJson(account, password, { progressCallback });
         }
         /**
          *  Returns a [JSON Keystore Wallet](json-wallets) encryped with
          *  %%password%%.
          *
-         *  It is preferred to use the [async version](encrypt) instead,
+         *  It is preferred to use the [version](encrypt) instead,
          *  which allows a [[ProgressCallback]] to keep the user informed.
          *
          *  This method will block the event loop (freezing all UI) until
@@ -25109,20 +23276,18 @@
          *  If %%progress%% is provided, it is called periodically during
          *  decryption so that any UI can be updated.
          */
-        static async fromEncryptedJson(json, password, progress) {
+        static fromEncryptedJson(json, password, progress) {
             let account = null;
             if (isKeystoreJson(json)) {
-                account = await decryptKeystoreJson(json, password, progress);
+                account = decryptKeystoreJson(json, password, progress);
             }
             else if (isCrowdsaleJson(json)) {
                 if (progress) {
                     progress(0);
-                    await stall(0);
                 }
                 account = decryptCrowdsaleJson(json, password);
                 if (progress) {
                     progress(1);
-                    await stall(0);
                 }
             }
             return Wallet.#fromAccount(account);
@@ -25315,8 +23480,6 @@
         HDNodeVoidWallet: HDNodeVoidWallet,
         HDNodeWallet: HDNodeWallet,
         Indexed: Indexed,
-        InfuraProvider: InfuraProvider,
-        InfuraWebSocketProvider: InfuraWebSocketProvider,
         Interface: Interface,
         IpcSocketProvider: IpcSocketProvider,
         JsonRpcApiProvider: JsonRpcApiProvider,
@@ -25342,11 +23505,6 @@
         Result: Result,
         Signature: Signature,
         SigningKey: SigningKey,
-        SocketBlockSubscriber: SocketBlockSubscriber,
-        SocketEventSubscriber: SocketEventSubscriber,
-        SocketPendingSubscriber: SocketPendingSubscriber,
-        SocketProvider: SocketProvider,
-        SocketSubscriber: SocketSubscriber,
         StructFragment: StructFragment,
         Transaction: Transaction,
         TransactionDescription: TransactionDescription,
@@ -25355,11 +23513,9 @@
         Typed: Typed,
         TypedDataEncoder: TypedDataEncoder,
         UndecodedEventLog: UndecodedEventLog,
-        UnmanagedSubscriber: UnmanagedSubscriber,
         Utf8ErrorFuncs: Utf8ErrorFuncs,
         VoidSigner: VoidSigner,
         Wallet: Wallet,
-        WebSocketProvider: WebSocketProvider,
         WeiPerEther: WeiPerEther,
         Wordlist: Wordlist,
         WordlistOwl: WordlistOwl,
