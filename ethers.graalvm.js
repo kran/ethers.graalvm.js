@@ -1,8 +1,7 @@
 (function (global) {
 
     const __$G = global;
-
-    /* Do NOT modify this file; see /src.ts/_admin/update-version.ts */
+    const globalThis = global;
     /**
      *  The current version of Ethers.
      */
@@ -18347,13 +18346,10 @@
         }
         if (pop.from != null) {
             const from = pop.from;
-            pop.from = Promise.all([
-                signer.getAddress(),
-                resolveAddress(from, signer)
-            ]).then(([address, from]) => {
+            pop.from = (([address, from]) => {
                 assertArgument(address.toLowerCase() === from.toLowerCase(), "transaction from mismatch", "tx.from", from);
                 return address;
-            });
+            })([signer.getAddress(), resolveAddress(from, signer) ]);
         }
         else {
             pop.from = signer.getAddress();
