@@ -8,23 +8,19 @@
      */
     const version = "6.13.1";
     const Thread = Java.type("java.lang.Thread");
-    const HttpUtil = Java.type("cn.hutool.http.HttpUtil");
+    const HttpMethod = Java.type("cn.hutool.http.Method");
+    const HttpRequest = Java.type("cn.hutool.http.HttpRequest");
 
     const wait = function(delay) {
         Thread.sleep(delay);
     }
     const fetch = function(req) {
-        // console.log(req)
-        var newReq;
-        if(req.method.toLowerCase() == "get") {
-            newReq = HttpUtil.createGet(req.url);
-        }
-        else {
-            newReq = HttpUtil.createPost(req.url);
+        var newReq = HttpRequest.of(req.url);
+        newReq.method(HttpMethod.valueOf(req.method));
+        newReq.headerMap(req.headers, true);
+        if(req.body) {
             newReq.body(req.body);
         }
-        newReq.headerMap(req.headers, true);
-
         return newReq.execute();
     }
 
@@ -1028,18 +1024,7 @@
             assert(protocol === "https" || !req.credentials || req.allowInsecureAuthentication, "insecure authorized connections unsupported", "UNSUPPORTED_OPERATION", {
                 operation: "request"
             });
-            // let error = null;
-            // const controller = new AbortController();
-            // const timer = setTimeout(() => {
-            //     error = makeError("request timeout", "TIMEOUT");
-            //     controller.abort();
-            // }, req.timeout);
-            // if (_signal) {
-            //     _signal.addListener(() => {
-            //         error = makeError("request cancelled", "CANCELLED");
-            //         controller.abort();
-            //     });
-            // }
+
             let resp;
             try {
                 resp = fetch(req);
@@ -19269,13 +19254,6 @@
                 pollingInterval = defaultOptions.pollingInterval;
             }
             this.#pollingInterval = pollingInterval;
-        }
-        _getSubscriber(sub) {
-            const subscriber = super._getSubscriber(sub);
-            if (isPollable(subscriber)) {
-                subscriber.pollingInterval = this.#pollingInterval;
-            }
-            return subscriber;
         }
         /**
          *  The polling interval (default: 4000 ms)
