@@ -17576,11 +17576,8 @@
             this.#plugins = new Map();
             this.#disableCcipRead = false;
 
-            const network = Network.from(_network);
-            assert(network, "network argument required", "INVALID_NETWORK", {});
             this.#anyNetwork = false;
-            this.#network = network;
-            this.emit("network", network, null);
+            this.#network = _network ? Network.from(_network) : null;
         }
         get pollingInterval() { return this.#options.pollingInterval; }
         /**
@@ -17594,7 +17591,8 @@
         get plugins() {
             return Array.from(this.#plugins.values());
         }
-        emit() {
+        emit(tag) {
+            print(tag, JSON.stringify(arguments));
             //ignore
         }
         /**
@@ -17878,6 +17876,11 @@
 
             }
             return request;
+        }
+
+        initNetwork() {
+            this.#network = this._detectNetwork();
+            return this;
         }
         getNetwork() {
             return this.#network;
@@ -18826,7 +18829,7 @@
         }
         constructor(network, options) {
             options = options || {};
-            options.staticNetwork = true; //alway use static network
+            // options.staticNetwork = true; //alway use static network
 
             super(network, options);
             this.#nextId = 1;
@@ -18887,58 +18890,7 @@
          *  _send primitive must be used instead.
          */
         _detectNetwork() {
-            const network = this._getOption("staticNetwork");
-            if (network) {
-                if (network === true) {
-                    if (this.#network) {
-                        return this.#network;
-                    }
-                }
-                else {
-                    return network;
-                }
-            }
-            if (this.#pendingDetectNetwork) {
-                return this.#pendingDetectNetwork;
-            }
-            // If we are ready, use ``send``, which enabled requests to be batched
-            if (this.ready) {
-                this.#pendingDetectNetwork = (() => {
-                    try {
-                        const result = Network.from(getBigInt(this.send("eth_chainId", [])));
-                        this.#pendingDetectNetwork = null;
-                        return result;
-                    }
-                    catch (error) {
-                        this.#pendingDetectNetwork = null;
-                        throw error;
-                    }
-                })();
-                return this.#pendingDetectNetwork;
-            }
-            // We are not ready yet; use the primitive _send
-            this.#pendingDetectNetwork = (() => {
-                const payload = {
-                    id: this.#nextId++, method: "eth_chainId", params: [], jsonrpc: "2.0"
-                };
-                this.emit("debug", { action: "sendRpcPayload", payload });
-                let result;
-                try {
-                    result = (this._send(payload))[0];
-                    this.#pendingDetectNetwork = null;
-                }
-                catch (error) {
-                    this.#pendingDetectNetwork = null;
-                    this.emit("debug", { action: "receiveRpcError", error });
-                    throw error;
-                }
-                this.emit("debug", { action: "receiveRpcResult", result });
-                if ("result" in result) {
-                    return Network.from(getBigInt(result.result));
-                }
-                throw this.getRpcError(payload, result);
-            })();
-            return this.#pendingDetectNetwork;
+            return Network.from(getBigInt(this._perform({ method: "chainId" })));
         }
         /**
          *  Sub-classes **MUST** call this. Until [[_start]] has been called, no calls
@@ -18948,16 +18900,6 @@
          *  Calling it multiple times is safe and has no effect.
          */
         _start() {
-            if (this.#notReady == null || this.#notReady.resolve == null) {
-                return;
-            }
-
-            this.#notReady.resolve();
-            this.#notReady = null;
-            // Bootstrap the network
-            while (this.#network == null && !this.destroyed) {
-                this.#network = this._detectNetwork();
-            }
         }
         /**
          *  Returns true only if the [[_start]] has been called.
