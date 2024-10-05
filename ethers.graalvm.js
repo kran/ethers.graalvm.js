@@ -7230,7 +7230,7 @@
      *  error is thrown.
      *
      *  If you wish the checksum of %%address%% to be ignore, it should
-     *  be converted to lower-case (i.e. ``.toLowercase()``) before
+     *  be converted to lower-case (i.e. ``.toLowerCase()``) before
      *  being passed in. This should be a very rare situation though,
      *  that you wish to bypass the safegaurds in place to protect
      *  against an address that has been incorrectly copied from another
@@ -11921,7 +11921,7 @@
                     });
                 }
                 if (result.length !== this.components.length) {
-                    throw new Error("array is wrong length");
+                    throw new Error(`array is wrong length, ${result.length}, ${this.components.length}`);
                 }
                 result.forEach((value, index) => {
                     components[index].#walkAsync(promises, value, process, (value) => {
@@ -15010,7 +15010,7 @@
         wait(_confirms, _timeout) {
             const confirms = (_confirms == null) ? 1 : _confirms;
             const timeout = (_timeout == null) ? 0 : _timeout;
-            const interval = (arguments[2] == null) ? 0 : arguments[2];
+            const interval = (arguments[2] == null) ? 2000 : arguments[2];
             let startBlock = this.#startBlock;
             let nextScan = -1;
             let stopScanning = (startBlock === -1) ? true : false;
@@ -15144,7 +15144,7 @@
 
                 const receipt = this.provider.getTransactionReceipt(this.hash);
                 // Done; return it!
-                if ((receipt.confirmations()) >= confirms) {
+                if (receipt !== null && (receipt.confirmations()) >= confirms) {
                     return (checkReceipt(receipt));
                 }
 
@@ -17647,8 +17647,7 @@
             return Array.from(this.#plugins.values());
         }
         emit(tag) {
-            print(tag, JSON.stringify(arguments));
-            //ignore
+            print(`[Ethers]`, tag, JSON.stringify(arguments));
         }
         /**
          *  Attach a new plug-in.
@@ -18134,7 +18133,7 @@
         }
         getTransactionReceipt(hash) {
             const { network, params } = resolveProperties({
-                // network: this.getNetwork(),
+                network: this.getNetwork(),
                 params: this.#perform({ method: "getTransactionReceipt", hash })
             });
             if (params == null) {
